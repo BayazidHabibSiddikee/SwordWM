@@ -53,7 +53,7 @@ uninstall:
 # make test-xephyr   — opens nested X at :1, launches WM + terminal
 # Requires: Xephyr  (sudo pacman -S xorg-server-xephyr)
 #           alacritty or ghostty or xterm + xfonts-base
-TERMINAL_TEST ?= $(shell which alacritty kitty xterm ghostty 2>/dev/null | head -1)
+TERMINAL_TEST ?= $(shell which ghostty alacritty kitty xterm 2>/dev/null | head -1)
 
 test-xephyr: $(BIN)
 	@which Xephyr >/dev/null 2>&1 || \
@@ -64,6 +64,6 @@ test-xephyr: $(BIN)
 	DISPLAY=:1 xsetroot -solid "\#1a1b26" 2>/dev/null || true
 	DISPLAY=:1 ./$(BIN) &
 	sleep 0.8
-	DISPLAY=:1 $(TERMINAL_TEST) &
+	DISPLAY=:1 LIBGL_ALWAYS_SOFTWARE=1 GDK_BACKEND=x11 GDK_DISABLE=gles-api,vulkan $(TERMINAL_TEST) &
 
 .PHONY: all debug clean install uninstall test-xephyr
