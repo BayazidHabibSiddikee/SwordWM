@@ -448,16 +448,26 @@ void RightPanel::paintEvent(QPaintEvent *) {
 
     drawSection(p, x, y, W, "TOP PROCESSES");
     y += 14;
+    // Column positions proportional to panel width — fixes distortion at any size
+    int colCpu = x + (bw * 60 / 100);   // CPU% starts at 60% of bar width
+    int colMem = x + (bw * 80 / 100);   // MEM% starts at 80% of bar width
     p.setFont(QFont("JetBrains Mono", 8)); p.setPen(DIM);
-    p.drawText(x, y + 10, QString("%1%2 %3%4").arg("NAME", -18).arg("CPU", 5).arg("MEM", 5));
+    p.drawText(x, y + 10, "NAME");
+    p.drawText(colCpu, y + 10, "CPU%");
+    p.drawText(colMem, y + 10, "MEM%");
     y += 13;
     p.setPen(QPen(DIM, 1)); p.drawLine(x, y, x + bw, y); y += 4;
     for (const auto &[name, cpu_mem] : m_procs) {
         QColor cc = valColor(cpu_mem.first);
-        p.setFont(QFont("JetBrains Mono", 8)); p.setPen(WHITE);
-        p.drawText(x, y + 10, QString("%1").arg(name, -18));
-        p.setPen(cc); p.drawText(x + 145, y + 10, QString("%1%").arg(cpu_mem.first, 0, 'f', 1));
-        p.setPen(GREEN); p.drawText(x + 195, y + 10, QString("%1%").arg(cpu_mem.second, 0, 'f', 1));
+        // Truncate name to fit available space before CPU column
+        QFont pf("JetBrains Mono", 8);
+        QFontMetrics pfm(pf);
+        int nameW = colCpu - x - 4;
+        QString displayName = pfm.elidedText(name, Qt::ElideRight, nameW);
+        p.setFont(pf); p.setPen(WHITE);
+        p.drawText(x, y + 10, displayName);
+        p.setPen(cc); p.drawText(colCpu, y + 10, QString("%1%").arg(cpu_mem.first, 0, 'f', 1));
+        p.setPen(GREEN); p.drawText(colMem, y + 10, QString("%1%").arg(cpu_mem.second, 0, 'f', 1));
         y += 13;
     }
     y += 6;
@@ -465,15 +475,20 @@ void RightPanel::paintEvent(QPaintEvent *) {
 
     drawSection(p, x, y, W, "QUICK KEYS");
     y += 14;
+    // Column for action label — proportional to width
+    int colAct = x + (bw * 55 / 100);
     struct { const char *key, *action; } keys[] = {
-        {"Super+Return", "terminal"}, {"Super+d", "launcher"},
-        {"Super+Ctrl+6", "restart deck"}, {"Super+Ctrl+e", "edit graph"},
-        {"Super+q", "close window"}, {"PrtSc", "screenshot"},
+        {"Mod+Return",   "terminal"},
+        {"Mod+Q",        "close window"},
+        {"Mod+J/K",      "focus next/prev"},
+        {"Mod+Space",    "rotate layout"},
+        {"Mod+Shift+R",  "reload config"},
+        {"Mod+1..9",     "workspace"},
     };
     for (const auto &k : keys) {
         p.setFont(QFont("JetBrains Mono", 8));
         p.setPen(CYAN); p.drawText(x, y + 11, k.key);
-        p.setPen(DIM); p.drawText(x + 130, y + 11, QString("» %1").arg(k.action));
+        p.setPen(DIM);  p.drawText(colAct, y + 11, QString("» %1").arg(k.action));
         y += 13;
     }
 
