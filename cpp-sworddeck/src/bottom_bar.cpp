@@ -7,14 +7,15 @@
 #include <QProcess>
 #include <QTimer>
 #include <QMouseEvent>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QJsonArray>
 #include <QDateTime>
 #include <QRegularExpression>
 #include <sys/statvfs.h>
 #include <unistd.h>
 #include <cmath>
+
+/* ── Xlib for EWMH workspace queries ─────────────────────── */
+#include <X11/Xlib.h>
+#include <X11/Xatom.h>
 
 static const QColor CYAN(97, 175, 239);
 static const QColor GREEN(152, 195, 121);
@@ -24,6 +25,8 @@ static const QColor DIM(62, 68, 81);
 static const QColor WHITE(171, 178, 191);
 static const QColor BG(40, 44, 52, 255);
 static const QColor WS_BG(62, 68, 81, 255);
+
+/* ── System stats (unchanged — all WM-agnostic) ──────────── */
 
 static int cpu() {
     QFile f("/proc/stat");
@@ -85,7 +88,7 @@ static QString netSpeed() {
 static QString music() {
     QProcess proc;
     proc.start("playerctl", {"metadata", "--format", "♫ {{artist}} – {{title}}"});
-    if (proc.waitForFinished(1000)) {
+    if (proc.waitForFinished(500)) {
         QString out = QString::fromLocal8Bit(proc.readAllStandardOutput()).trimmed();
         return out.length() > 45 ? out.left(45) + "…" : (out.isEmpty() ? "♫ —" : out);
     }
@@ -105,11 +108,12 @@ static QString network() {
     QString name = "—", icon = "🌐";
     QProcess proc;
     proc.start("nmcli", {"-t", "-f", "TYPE,STATE,CONNECTION", "device"});
-    if (proc.waitForFinished(1000)) {
+    if (proc.waitForFinished(500)) {
         QStringList lines = QString::fromLocal8Bit(proc.readAllStandardOutput()).split('\n');
         for (const auto &line : lines) {
             QStringList parts = line.split(':');
-            if (parts.size() >= 3 && parts[1] == "connected" && !parts[2].isEmpty() && parts[2] != "--") {
+            if (parts.size() >= 3 && parts[1] == "connected" &&
+                !parts[2].isEmpty() && parts[2] != "--") {
                 if (parts[0] == "wifi") { name = parts[2]; icon = "📶"; break; }
                 else { name = parts[2]; }
             }
@@ -118,7 +122,7 @@ static QString network() {
     QString ip = "?";
     QProcess ipProc;
     ipProc.start("ip", {"-4", "-o", "addr", "show", "scope", "global"});
-    if (ipProc.waitForFinished(1000)) {
+    if (ipProc.waitForFinished(500)) {
         QStringList lines = QString::fromLocal8Bit(ipProc.readAllStandardOutput()).split('\n');
         if (!lines.isEmpty()) {
             QStringList parts = lines[0].split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
@@ -143,30 +147,125 @@ static QPair<int, QString> battery() {
 static QString volume() {
     QProcess proc;
     proc.start("pactl", {"get-sink-volume", "@DEFAULT_SINK@"});
-    if (proc.waitForFinished(1000)) {
+    if (proc.waitForFinished(500)) {
         QString out = QString::fromLocal8Bit(proc.readAllStandardOutput());
         QString vol = out.split('%')[0].split('/').last().trimmed();
         QProcess mute;
         mute.start("pactl", {"get-sink-mute", "@DEFAULT_SINK@"});
-        bool isMuted = mute.waitForFinished(1000) && QString::fromLocal8Bit(mute.readAllStandardOutput()).contains("yes");
+        bool isMuted = mute.waitForFinished(500) &&
+                       QString::fromLocal8Bit(mute.readAllStandardOutput()).contains("yes");
         return isMuted ? QString("🔇 %1%").arg(vol) : QString("🔊 %1%").arg(vol);
     }
     return "";
 }
 
-static QVector<Workspace> workspaces() {
-    QVector<Workspace> ws;
-    QProcess proc;
-    proc.start("i3-msg", {"-t", "get_workspaces"});
-    if (proc.waitForFinished(1000)) {
-        auto doc = QJsonDocument::fromJson(proc.readAllStandardOutput());
-        for (const auto &v : doc.array()) {
-            auto o = v.toObject();
-            ws.append({o["name"].toString(), o["focused"].toBool(), o["urgent"].toBool()});
-        }
+/* ── EWMH workspace helpers (replaces i3-msg entirely) ───── */
+
+/*
+ * Read a cardinal property from the root window.
+ * Returns -1 on failure.
+ */
+static long ewmhGetCardinal(Display *dpy, Window root, const char *atom_name) {
+    Atom atom = XInternAtom(dpy, atom_name, False);
+    Atom actual_type;
+    int  actual_format;
+    unsigned long n_items, bytes_after;
+    unsigned char *prop = nullptr;
+
+    if (XGetWindowProperty(dpy, root, atom, 0, 1, False, XA_CARDINAL,
+                           &actual_type, &actual_format,
+                           &n_items, &bytes_after, &prop) == Success && prop) {
+        long val = *(long *)prop;
+        XFree(prop);
+        return val;
     }
-    return ws;
+    return -1;
 }
+
+/*
+ * Query workspaces purely via EWMH root properties:
+ *   _NET_NUMBER_OF_DESKTOPS  — how many workspaces exist
+ *   _NET_CURRENT_DESKTOP     — which one is active (0-based)
+ *   _NET_DESKTOP_NAMES       — UTF-8 names (optional; we fall back to "1"…"9")
+ *
+ * Works with swordwm, i3, openbox, bspwm — any EWMH WM.
+ */
+static QVector<Workspace> workspacesEWMH() {
+    QVector<Workspace> result;
+
+    Display *dpy = XOpenDisplay(nullptr);
+    if (!dpy) return result;
+
+    Window root = DefaultRootWindow(dpy);
+
+    long num     = ewmhGetCardinal(dpy, root, "_NET_NUMBER_OF_DESKTOPS");
+    long current = ewmhGetCardinal(dpy, root, "_NET_CURRENT_DESKTOP");
+
+    if (num <= 0) { XCloseDisplay(dpy); return result; }
+
+    /* Try to read desktop names (_NET_DESKTOP_NAMES — UTF-8 string list) */
+    QStringList names;
+    Atom namesAtom = XInternAtom(dpy, "_NET_DESKTOP_NAMES", False);
+    Atom utf8Atom  = XInternAtom(dpy, "UTF8_STRING", False);
+    Atom actual_type;
+    int  actual_format;
+    unsigned long n_items, bytes_after;
+    unsigned char *prop = nullptr;
+
+    if (XGetWindowProperty(dpy, root, namesAtom, 0, 4096, False, utf8Atom,
+                           &actual_type, &actual_format,
+                           &n_items, &bytes_after, &prop) == Success && prop) {
+        /* Names are null-separated UTF-8 strings */
+        const char *p = (const char *)prop;
+        const char *end = p + n_items;
+        while (p < end) {
+            names << QString::fromUtf8(p);
+            p += strlen(p) + 1;
+        }
+        XFree(prop);
+    }
+
+    XCloseDisplay(dpy);
+
+    /* Build workspace list */
+    for (long i = 0; i < num; i++) {
+        Workspace ws;
+        ws.name    = (i < names.size()) ? names[(int)i] : QString::number(i + 1);
+        ws.focused = (i == current);
+        ws.urgent  = false;   /* _NET_WM_STATE_DEMANDS_ATTENTION per-window; skip for now */
+        result.append(ws);
+    }
+    return result;
+}
+
+/*
+ * Switch workspace by sending _NET_CURRENT_DESKTOP ClientMessage to root.
+ * This is the standard EWMH mechanism — works with swordwm and any EWMH WM.
+ */
+static void switchWorkspaceEWMH(int index) {
+    Display *dpy = XOpenDisplay(nullptr);
+    if (!dpy) return;
+
+    Window root  = DefaultRootWindow(dpy);
+    Atom   atom  = XInternAtom(dpy, "_NET_CURRENT_DESKTOP", False);
+
+    XEvent ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.type                 = ClientMessage;
+    ev.xclient.display      = dpy;
+    ev.xclient.window       = root;
+    ev.xclient.message_type = atom;
+    ev.xclient.format       = 32;
+    ev.xclient.data.l[0]    = index;
+    ev.xclient.data.l[1]    = CurrentTime;
+
+    XSendEvent(dpy, root, False,
+               SubstructureRedirectMask | SubstructureNotifyMask, &ev);
+    XFlush(dpy);
+    XCloseDisplay(dpy);
+}
+
+/* ── BottomBar ────────────────────────────────────────────── */
 
 BottomBar::BottomBar(QWidget *parent)
     : QWidget(parent), m_stats{0,0,0,"","","","","","",100}
@@ -186,12 +285,14 @@ BottomBar::BottomBar(QWidget *parent)
 
 void BottomBar::refresh() {
     auto [batPct, batTxt] = battery();
-    m_stats = {cpu(), memPct(), diskPct(), netSpeed(), music(), uptimeStr(), network(), batTxt, volume(), batPct};
+    m_stats = {cpu(), memPct(), diskPct(),
+               netSpeed(), music(), uptimeStr(),
+               network(), batTxt, volume(), batPct};
     update();
 }
 
 void BottomBar::refreshWorkspaces() {
-    auto ws = workspaces();
+    auto ws = workspacesEWMH();
     if (ws.size() != m_ws.size() || ws != m_ws) {
         m_ws = ws;
         update();
@@ -202,7 +303,7 @@ void BottomBar::mousePressEvent(QMouseEvent *e) {
     int x = (int)e->position().x();
     for (int i = 0; i < m_wsRects.size(); i++) {
         if (m_wsRects[i].first <= x && x <= m_wsRects[i].second) {
-            QProcess::startDetached("i3-msg", {"workspace", m_ws[i].name});
+            switchWorkspaceEWMH(i);   /* 0-based index */
             return;
         }
     }
@@ -218,6 +319,7 @@ void BottomBar::paintEvent(QPaintEvent *) {
     QFontMetrics fm(f);
     int y = H - (H - fm.ascent()) / 2 - 2;
 
+    /* ── Workspaces ──────────────────────────────────────── */
     m_wsRects.clear();
     int x = 6;
     for (const auto &ws : m_ws) {
@@ -237,6 +339,7 @@ void BottomBar::paintEvent(QPaintEvent *) {
     }
     x += 8;
 
+    /* ── Left / centre stats ─────────────────────────────── */
     QString user = qgetenv("USER");
     QDateTime now = QDateTime::currentDateTime();
     QString sep = "  │  ";
@@ -245,21 +348,23 @@ void BottomBar::paintEvent(QPaintEvent *) {
     auto batCol = [](int v) { return v <= 20 ? RED : v <= 40 ? AMBER : GREEN; };
 
     struct Part { QColor c; QString t; };
-    QVector<Part> parts;
-    parts.append({CYAN, QString("[%1]  %2").arg(user.toUpper()).arg(now.toString("HH:mm:ss  ddd dd MMM"))});
-    parts.append({DIM, sep});
-    parts.append({GREEN, "⚡ CPU: "});
-    parts.append({cpuCol(m_stats.cpu), QString("%1%").arg(m_stats.cpu)});
-    parts.append({DIM, sep});
-    parts.append({GREEN, "🧠 RAM: "});
-    parts.append({CYAN, QString("%1%").arg(m_stats.mem)});
-    parts.append({DIM, sep});
-    parts.append({GREEN, "💾 /: "});
-    parts.append({CYAN, QString("%1%").arg(m_stats.disk)});
-    parts.append({DIM, sep});
-    parts.append({CYAN, m_stats.net});
-    parts.append({DIM, sep});
-    parts.append({GREEN, m_stats.music});
+    QVector<Part> parts = {
+        {CYAN,            QString("[%1]  %2").arg(user.toUpper())
+                          .arg(now.toString("HH:mm:ss  ddd dd MMM"))},
+        {DIM,             sep},
+        {GREEN,           "⚡ CPU: "},
+        {cpuCol(m_stats.cpu), QString("%1%").arg(m_stats.cpu)},
+        {DIM,             sep},
+        {GREEN,           "🧠 RAM: "},
+        {CYAN,            QString("%1%").arg(m_stats.mem)},
+        {DIM,             sep},
+        {GREEN,           "💾 /: "},
+        {CYAN,            QString("%1%").arg(m_stats.disk)},
+        {DIM,             sep},
+        {CYAN,            m_stats.net},
+        {DIM,             sep},
+        {GREEN,           m_stats.music},
+    };
 
     for (const auto &pt : parts) {
         p.setPen(pt.c);
@@ -267,10 +372,11 @@ void BottomBar::paintEvent(QPaintEvent *) {
         x += fm.horizontalAdvance(pt.t);
     }
 
+    /* ── Right-aligned: wifi · volume · battery · uptime ─── */
     QVector<QPair<QColor, QString>> right;
-    if (!m_stats.wifi.isEmpty()) right.append({WHITE, m_stats.wifi});
-    if (!m_stats.vol.isEmpty()) right.append({CYAN, m_stats.vol});
-    if (!m_stats.bat.isEmpty()) right.append({batCol(m_stats.batPct), m_stats.bat});
+    if (!m_stats.wifi.isEmpty())   right.append({WHITE,              m_stats.wifi});
+    if (!m_stats.vol.isEmpty())    right.append({CYAN,               m_stats.vol});
+    if (!m_stats.bat.isEmpty())    right.append({batCol(m_stats.batPct), m_stats.bat});
     right.append({GREEN, m_stats.uptime});
 
     int rx = W - 10;

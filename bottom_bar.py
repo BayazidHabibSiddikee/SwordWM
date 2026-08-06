@@ -4,7 +4,8 @@ Left:  clickable workspace buttons
 Mid:   time · CPU · RAM · disk · net speed · active window
 Right: wifi SSID + IP · volume · battery · uptime
 """
-import os, json, getpass, subprocess
+import os, getpass, subprocess
+import Xlib, Xlib.display, Xlib.Xatom, Xlib.protocol.event
 from datetime import datetime
 
 USER_TAG = f"[{getpass.getuser().upper()}]"
@@ -176,14 +177,74 @@ def _volume():
 
 
 def _workspaces():
+    """
+    Query workspaces via EWMH root window properties — no i3-msg needed.
+    Works with SwordWM, i3, openbox, bspwm or any EWMH-compliant WM.
+
+    Reads:
+      _NET_NUMBER_OF_DESKTOPS  — total workspace count
+      _NET_CURRENT_DESKTOP     — active workspace (0-based)
+      _NET_DESKTOP_NAMES       — UTF-8 name list (null-separated)
+    """
     try:
-        return [
-            (w["name"], w["focused"], w["urgent"])
-            for w in json.loads(subprocess.check_output(
-                ["i3-msg", "-t", "get_workspaces"], timeout=1, text=True))
-        ]
+        d = Xlib.display.Display()
+        root = d.screen().root
+
+        def _card(name):
+            atom = d.intern_atom(name)
+            prop = root.get_full_property(atom, Xlib.Xatom.CARDINAL)
+            return prop.value[0] if prop else -1
+
+        num     = _card("_NET_NUMBER_OF_DESKTOPS")
+        current = _card("_NET_CURRENT_DESKTOP")
+        if num <= 0:
+            d.close()
+            return []
+
+        # Desktop names (UTF8_STRING, null-separated)
+        names = []
+        utf8  = d.intern_atom("UTF8_STRING")
+        na    = d.intern_atom("_NET_DESKTOP_NAMES")
+        prop  = root.get_full_property(na, utf8)
+        if prop and prop.value:
+            raw = bytes(prop.value)
+            names = [s.decode("utf-8", errors="replace")
+                     for s in raw.split(b"\x00") if s]
+
+        d.close()
+
+        result = []
+        for i in range(num):
+            name    = names[i] if i < len(names) else str(i + 1)
+            focused = (i == current)
+            result.append((name, focused, False))
+        return result
     except Exception:
         return []
+
+
+def _switch_workspace(index: int):
+    """
+    Switch to workspace by 0-based index via EWMH ClientMessage on root.
+    Replaces: i3-msg workspace <name>
+    """
+    try:
+        import Xlib.X
+        d    = Xlib.display.Display()
+        root = d.screen().root
+        atom = d.intern_atom("_NET_CURRENT_DESKTOP")
+
+        ev = Xlib.protocol.event.ClientMessage(
+            window       = root,
+            client_type  = atom,
+            data         = (32, [index, Xlib.X.CurrentTime, 0, 0, 0]),
+        )
+        mask = (Xlib.X.SubstructureRedirectMask | Xlib.X.SubstructureNotifyMask)
+        root.send_event(ev, event_mask=mask)
+        d.flush()
+        d.close()
+    except Exception as e:
+        print(f"[bottom_bar] workspace switch error: {e}")
 
 
 class BottomBar(QWidget):
@@ -218,11 +279,9 @@ class BottomBar(QWidget):
 
     def mousePressEvent(self, e):
         x = int(e.position().x())
-        for x0, x1, name in self._ws_rects:
+        for idx, (x0, x1, name) in enumerate(self._ws_rects):
             if x0 <= x <= x1:
-                subprocess.Popen(["i3-msg", "workspace", name],
-                                 stdout=subprocess.DEVNULL,
-                                 stderr=subprocess.DEVNULL)
+                _switch_workspace(idx)
                 return
 
     def paintEvent(self, _):
