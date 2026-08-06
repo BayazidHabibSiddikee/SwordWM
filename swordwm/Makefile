@@ -50,14 +50,20 @@ uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/$(BIN)
 
 # ── Xephyr test ────────────────────────────────────────────
-# make test-xephyr   — opens nested X at :1, launches WM + xterm
+# make test-xephyr   — opens nested X at :1, launches WM + terminal
+# Requires: Xephyr  (sudo pacman -S xorg-server-xephyr)
+#           alacritty or ghostty or xterm + xfonts-base
+TERMINAL_TEST ?= $(shell which ghostty alacritty kitty xterm 2>/dev/null | head -1)
+
 test-xephyr: $(BIN)
 	@which Xephyr >/dev/null 2>&1 || \
-	  (echo "Install Xephyr: sudo pacman -S xorg-server-xephyr" && exit 1)
-	Xephyr :1 -screen 1280x720 &
-	sleep 1
+	  (echo "Install Xephyr: sudo pacman -S xorg-server-xephyr  OR  sudo apt install xserver-xephyr" && exit 1)
+	@pkill -x Xephyr 2>/dev/null || true
+	Xephyr :1 -screen 1280x720 -br &
+	sleep 1.2
+	DISPLAY=:1 xsetroot -solid "\#1a1b26" 2>/dev/null || true
 	DISPLAY=:1 ./$(BIN) &
-	sleep 0.5
-	DISPLAY=:1 xterm &
+	sleep 0.8
+	DISPLAY=:1 $(TERMINAL_TEST) &
 
 .PHONY: all debug clean install uninstall test-xephyr
