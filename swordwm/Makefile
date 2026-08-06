@@ -53,7 +53,7 @@ uninstall:
 # make test-xephyr   — opens nested X at :1, launches WM + terminal
 # Requires: Xephyr  (sudo pacman -S xorg-server-xephyr)
 #           alacritty or ghostty or xterm + xfonts-base
-TERMINAL_TEST ?= $(shell which ghostty alacritty kitty xterm 2>/dev/null | head -1)
+TERMINAL_TEST ?= $(shell which alacritty kitty xterm ghostty 2>/dev/null | head -1)
 
 test-xephyr: $(BIN)
 	@which Xephyr >/dev/null 2>&1 || \
