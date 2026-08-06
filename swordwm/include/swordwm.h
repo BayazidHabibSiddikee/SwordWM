@@ -19,6 +19,8 @@
 
 #include "types.h"
 #include "config.h"
+#include "decorate.h"
+#include "ewmh.h"
 
 /* ── Global WM state ─────────────────────────────────────── */
 extern WMState *wm;

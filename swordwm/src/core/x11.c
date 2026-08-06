@@ -157,6 +157,12 @@ int x11_connect(void) {
     x11_subscribe_events();
     x11_grab_keys();
 
+    /* Decoration resources (Xft font, GC) */
+    decorate_init();
+
+    /* Full EWMH property setup */
+    ewmh_init();
+
     /* Set root window background */
     XSetWindowBackground(wm->dpy, wm->root,
         BlackPixel(wm->dpy, wm->screen));
@@ -174,12 +180,14 @@ int x11_connect(void) {
 /* ── x11_subscribe_events ────────────────────────────────── */
 void x11_subscribe_events(void) {
     XSelectInput(wm->dpy, wm->root,
-        SubstructureRedirectMask |  /* intercept MapRequest, ConfigureRequest */
-        SubstructureNotifyMask   |  /* UnmapNotify, DestroyNotify             */
-        StructureNotifyMask      |  /* ConfigureNotify on root                */
-        PropertyChangeMask       |  /* PropertyNotify                         */
-        KeyPressMask             |  /* keyboard shortcuts                     */
-        ButtonPressMask             /* mouse clicks on root                   */
+        SubstructureRedirectMask |
+        SubstructureNotifyMask   |
+        StructureNotifyMask      |
+        PropertyChangeMask       |
+        KeyPressMask             |
+        ButtonPressMask          |
+        ButtonReleaseMask        |
+        PointerMotionMask
     );
 }
 
@@ -298,13 +306,24 @@ static void handle_key_press(XEvent *e) {
 
 static void handle_button_press(XEvent *e) {
     XButtonEvent *ev = &e->xbutton;
-    /* Click on root window — focus root */
-    if (ev->window == wm->root) return;
 
-    /* Click on a frame: focus that client */
+    /* Let decorate handle frame clicks (close btn, drag, resize) */
     for (Workspace *ws = wm->workspaces; ws; ws = ws->next) {
         for (Client *c = ws->head; c; c = c->next) {
-            if (c->frame == ev->window || c->win == ev->window) {
+            if (c->frame == ev->window) {
+                client_focus(c);
+                if (decorate_button_press(c, ev))
+                    return;  /* consumed by decorate */
+                XAllowEvents(wm->dpy, ReplayPointer, CurrentTime);
+                return;
+            }
+        }
+    }
+
+    /* Click on client window itself → focus */
+    for (Workspace *ws = wm->workspaces; ws; ws = ws->next) {
+        for (Client *c = ws->head; c; c = c->next) {
+            if (c->win == ev->window) {
                 client_focus(c);
                 XAllowEvents(wm->dpy, ReplayPointer, CurrentTime);
                 return;
@@ -324,6 +343,29 @@ static void handle_enter_notify(XEvent *e) {
 #endif
 }
 
+static void handle_expose(XEvent *e) {
+    XExposeEvent *ev = &e->xexpose;
+    /* Only redraw on the last Expose in a sequence (count==0) */
+    if (ev->count != 0) return;
+    Client *c = client_find(ev->window);
+    if (c) decorate_draw(c);
+}
+
+static void handle_motion_notify(XEvent *e) {
+    /* Compress motion events — only handle the latest one */
+    while (XCheckTypedEvent(wm->dpy, MotionNotify, e))
+        ;
+    XMotionEvent *ev = &e->xmotion;
+    Client *c = client_find(ev->window);
+    decorate_motion(c, ev);
+}
+
+static void handle_button_release(XEvent *e) {
+    (void)e;
+    decorate_button_release();
+    XAllowEvents(wm->dpy, ReplayPointer, CurrentTime);
+}
+
 /* ── Dispatch table ──────────────────────────────────────── */
 static void (*handlers[LASTEvent])(XEvent *) = {
     [MapRequest]      = handle_map_request,
@@ -334,6 +376,9 @@ static void (*handlers[LASTEvent])(XEvent *) = {
     [ClientMessage]   = handle_client_message,
     [KeyPress]        = handle_key_press,
     [ButtonPress]     = handle_button_press,
+    [ButtonRelease]   = handle_button_release,
+    [MotionNotify]    = handle_motion_notify,
+    [Expose]          = handle_expose,
     [EnterNotify]     = handle_enter_notify,
 };
 
@@ -352,6 +397,7 @@ void x11_cleanup(void) {
     if (!wm || !wm->dpy) return;
 
     x11_ungrab_keys();
+    decorate_cleanup();
 
     /* Delete EWMH properties we set on root */
     XDeleteProperty(wm->dpy, wm->root, wm->net_client_list);

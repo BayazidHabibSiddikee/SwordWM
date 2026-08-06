@@ -5,8 +5,9 @@
 CC      = gcc
 CFLAGS  = -Wall -Wextra -Wpedantic -O2 -std=c11 \
           -Iinclude \
-          $(shell pkg-config --cflags x11 xkbcommon 2>/dev/null || echo "-I/usr/include/X11")
-LDFLAGS = -lX11 -lm
+          $(shell pkg-config --cflags x11 xft fontconfig 2>/dev/null)
+LDFLAGS = $(shell pkg-config --libs x11 xft fontconfig 2>/dev/null) -lm
+
 PREFIX  = /usr/local
 
 SRCS = src/main.c \
@@ -14,7 +15,9 @@ SRCS = src/main.c \
        src/core/client.c \
        src/core/workspace.c \
        src/layout/layout.c \
-       src/input/input.c
+       src/input/input.c \
+       src/decorate/decorate.c \
+       src/ewmh/ewmh.c
 
 OBJS = $(SRCS:.c=.o)
 BIN  = swordwm
@@ -31,7 +34,7 @@ $(BIN): $(OBJS)
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-debug: CFLAGS += -g -O0 -DDEBUG -fsanitize=address,undefined
+debug: CFLAGS  += -g -O0 -DDEBUG -fsanitize=address,undefined
 debug: LDFLAGS += -fsanitize=address,undefined
 debug: $(BIN)
 
@@ -45,15 +48,15 @@ install: $(BIN)
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/$(BIN)
 
-# ── Xephyr test target ─────────────────────────────────────
-# Run a nested X server for safe development testing.
-# Usage: make test-xephyr
+# ── Xephyr test ────────────────────────────────────────────
+# make test-xephyr   — opens nested X at :1, launches WM + xterm
 test-xephyr: $(BIN)
-	@which Xephyr >/dev/null 2>&1 || (echo "Install Xephyr: sudo pacman -S xorg-server-xephyr" && exit 1)
-	@echo "Starting Xephyr on :1 — open a terminal there and test"
+	@which Xephyr >/dev/null 2>&1 || \
+	  (echo "Install Xephyr: sudo pacman -S xorg-server-xephyr" && exit 1)
 	Xephyr :1 -screen 1280x720 &
 	sleep 1
 	DISPLAY=:1 ./$(BIN) &
+	sleep 0.5
 	DISPLAY=:1 xterm &
 
 .PHONY: all debug clean install uninstall test-xephyr

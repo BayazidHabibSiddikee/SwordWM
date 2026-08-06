@@ -13,20 +13,6 @@ static unsigned long parse_color(const char *hex) {
     return BlackPixel(wm->dpy, wm->screen);
 }
 
-/* ── Update _NET_CLIENT_LIST on root ─────────────────────── */
-static void update_client_list(void) {
-    /* Collect all windows across all workspaces */
-    Window wins[1024];
-    int n = 0;
-    for (Workspace *ws = wm->workspaces; ws && n < 1024; ws = ws->next)
-        for (Client *c = ws->head; c && n < 1024; c = c->next)
-            wins[n++] = c->win;
-
-    XChangeProperty(wm->dpy, wm->root, wm->net_client_list,
-                    XA_WINDOW, 32, PropModeReplace,
-                    (unsigned char *)wins, n);
-}
-
 /* ── Check if a window should auto-float ─────────────────── */
 static int should_float(Window win) {
     /* Check _NET_WM_WINDOW_TYPE */
@@ -120,19 +106,24 @@ Client *client_add(Window win, Workspace *ws) {
     XMapWindow(wm->dpy, c->frame);
     XMapWindow(wm->dpy, win);
 
-    /* Set _NET_WM_DESKTOP */
-    long desktop = ws->id;
-    XChangeProperty(wm->dpy, win, wm->net_wm_desktop,
-                    XA_CARDINAL, 32, PropModeReplace,
-                    (unsigned char *)&desktop, 1);
-
     /* Prepend to workspace client list */
     c->next = ws->head;
     c->prev = NULL;
     if (ws->head) ws->head->prev = c;
     ws->head = c;
 
-    update_client_list();
+    /* Set ICCCM WM_STATE = NormalState */
+    ewmh_set_wm_state(c, 1 /* NormalState */);
+
+    /* Set _NET_WM_DESKTOP */
+    ewmh_set_client_desktop(c, ws->id);
+
+    ewmh_update_client_list();
+
+    /* Draw the initial title bar */
+    ewmh_read_title(c);
+    decorate_draw(c);
+
     return c;
 }
 
@@ -161,7 +152,7 @@ void client_remove(Client *c) {
     }
 
     free(c);
-    update_client_list();
+    ewmh_update_client_list();
 }
 
 /* ── client_find ─────────────────────────────────────────── */
@@ -182,10 +173,9 @@ void client_focus(Client *c) {
         client_unfocus(wm->focused);
 
     if (!c) {
-        /* No client: give focus to root */
         XSetInputFocus(wm->dpy, wm->root,
                        RevertToPointerRoot, CurrentTime);
-        XDeleteProperty(wm->dpy, wm->root, wm->net_active_window);
+        ewmh_update_active_window(NULL);
         wm->focused = NULL;
         return;
     }
@@ -198,28 +188,22 @@ void client_focus(Client *c) {
     /* Raise frame */
     XRaiseWindow(wm->dpy, c->frame);
 
-    /* Set focused border color */
-    XSetWindowBorder(wm->dpy, c->frame,
-                     parse_color(c->urgent
-                                 ? COLOR_URGENT_BORDER
-                                 : COLOR_FOCUSED_BORDER));
+    /* Redraw title bar with focused colours */
+    decorate_draw(c);
 
     /* Give keyboard focus */
     XSetInputFocus(wm->dpy, c->win,
                    RevertToPointerRoot, CurrentTime);
 
-    /* Update _NET_ACTIVE_WINDOW */
-    XChangeProperty(wm->dpy, wm->root, wm->net_active_window,
-                    XA_WINDOW, 32, PropModeReplace,
-                    (unsigned char *)&c->win, 1);
+    /* Update EWMH */
+    ewmh_update_active_window(c);
 }
 
 /* ── client_unfocus ──────────────────────────────────────── */
 void client_unfocus(Client *c) {
     if (!c) return;
     c->focused = 0;
-    XSetWindowBorder(wm->dpy, c->frame,
-                     parse_color(COLOR_UNFOCUSED_BORDER));
+    decorate_draw(c);
 }
 
 /* ── manage_window ───────────────────────────────────────── */
