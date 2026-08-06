@@ -1,0 +1,8 @@
+# SwordFish v2.0 — Python optional tool dependencies
+# These are NOT required to run the browser.
+# Install only what you need, or let the Tools Hub manage it for you.
+#
+# Used by: Translator, YouTube Transcript (via yt-dlp), PDF→Text fallback
+deep-translator
+yt-dlp
+youtube-transcript-api

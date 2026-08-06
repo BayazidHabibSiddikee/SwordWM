@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SwordFish Tools Hub</title>
+    <style>
+        /* ── Light mode (default) ── */
+        :root {
+            --bg:        #f0faff;
+            --bg-card:   #ffffff;
+            --bg-hover:  #e0f2fe;
+            --border:    #caf0f8;
+            --border-hv: #00b4d8;
+            --text:      #333333;
+            --text-name: #023e8a;
+            --text-desc: #666666;
+            --heading:   #0077b6;
+            --sec-title: #0096c7;
+            --sec-line:  #ade8f4;
+            --shadow:    rgba(0,0,0,0.05);
+            --shadow-hv: rgba(0,180,216,0.2);
+        }
+
+        /* ── Dark mode — One Dark palette ── */
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg:        #282c34;
+                --bg-card:   #2c313c;
+                --bg-hover:  #3e4451;
+                --border:    #3e4451;
+                --border-hv: #61afef;
+                --text:      #abb2bf;
+                --text-name: #61afef;
+                --text-desc: #5c6370;
+                --heading:   #61afef;
+                --sec-title: #98c379;
+                --sec-line:  #3e4451;
+                --shadow:    rgba(0,0,0,0.3);
+                --shadow-hv: rgba(97,175,239,0.15);
+            }
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            color: var(--heading);
+            margin-bottom: 30px;
+            font-size: 32px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+        }
+        .section-title {
+            color: var(--sec-title);
+            border-bottom: 2px solid var(--sec-line);
+            padding-bottom: 5px;
+            margin: 30px 0 15px;
+            font-size: 22px;
+        }
+        .tool-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 20px;
+        }
+        .tool-card {
+            background-color: var(--bg-card);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            border: 1px solid var(--border);
+            box-shadow: 0 4px 6px var(--shadow);
+        }
+        .tool-card:hover {
+            transform: translateY(-5px);
+            background-color: var(--bg-hover);
+            border-color: var(--border-hv);
+            box-shadow: 0 8px 15px var(--shadow-hv);
+        }
+        .tool-icon {
+            font-size: 40px;
+            margin-bottom: 12px;
+            display: block;
+        }
+        .tool-name {
+            font-size: 16px;
+            font-weight: bold;
+            color: var(--text-name);
+        }
+        .tool-desc {
+            font-size: 11px;
+            color: var(--text-desc);
+            margin-top: 8px;
+            line-height: 1.4;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 50px;
+            padding-top: 20px;
+            border-top: 2px solid var(--sec-line);
+        }
+        .footer a { color: var(--heading); text-decoration: none; font-weight: bold; }
+        .footer img {
+            width: 150px; height: 150px;
+            margin-top: 15px;
+            border: 2px solid var(--border-hv);
+            border-radius: 12px;
+            padding: 5px;
+            background: white;
+        }
+        /* ── Dependency cards ── */
+        .check-btn {
+            padding: 8px 18px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            color: var(--text-name);
+            font-size: 13px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .check-btn:hover { background: var(--bg-hover); }
+        .deps-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+        .dep-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 14px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .dep-card .dep-name {
+            font-size: 14px;
+            font-weight: bold;
+            color: var(--text-name);
+        }
+        .dep-card .dep-desc {
+            font-size: 11px;
+            color: var(--text-desc);
+            line-height: 1.4;
+        }
+        .dep-card .dep-status {
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .dep-card .dep-status.ok   { color: #98c379; }
+        .dep-card .dep-status.miss { color: #e5c07b; }
+        .dep-card .dep-install-btn {
+            margin-top: 4px;
+            padding: 7px 14px;
+            border-radius: 7px;
+            border: none;
+            background: var(--heading);
+            color: #fff;
+            font-size: 12px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: opacity 0.2s;
+            align-self: flex-start;
+        }
+        .dep-card .dep-install-btn:hover    { opacity: 0.85; }
+        .dep-card .dep-install-btn:disabled { opacity: 0.45; cursor: default; }
+        .dep-card .dep-msg {
+            font-size: 11px;
+            color: var(--text-desc);
+            min-height: 14px;
+        }
+        /* ── Extension install bar ── */
+        .install-box {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px 20px;
+            box-shadow: 0 4px 6px var(--shadow);
+        }
+        .install-box input {
+            flex: 1;
+            min-width: 260px;
+            padding: 10px 14px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--bg);
+            color: var(--text);
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .install-box input:focus { border-color: var(--border-hv); }
+        .install-box button {
+            padding: 10px 22px;
+            border-radius: 8px;
+            border: none;
+            background: var(--heading);
+            color: #fff;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        .install-box button:hover  { opacity: 0.85; }
+        .install-box button:disabled { opacity: 0.45; cursor: default; }
+        #installStatus {
+            width: 100%;
+            font-size: 13px;
+            min-height: 18px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 SwordFish Tools Hub</h1>
+
+        <div class="section-title">📄 PDF & Document Tools</div>
+        <div class="tool-grid">
+            <div class="tool-card" onclick="runTool('pdf_merge')">
+                <span class="tool-icon">📚</span>
+                <div class="tool-name">Merge PDFs</div>
+                <div class="tool-desc">Combine multiple PDFs into one</div>
+            </div>
+            <div class="tool-card" onclick="runTool('pdf_split')">
+                <span class="tool-icon">✂️</span>
+                <div class="tool-name">Split PDF</div>
+                <div class="tool-desc">Extract pages from PDF</div>
+            </div>
+            <div class="tool-card" onclick="runTool('word_to_pdf')">
+                <span class="tool-icon">📝</span>
+                <div class="tool-name">Word → PDF</div>
+                <div class="tool-desc">Convert DOCX to PDF</div>
+            </div>
+            <div class="tool-card" onclick="runTool('pdf_to_word')">
+                <span class="tool-icon">📖</span>
+                <div class="tool-name">PDF → Word</div>
+                <div class="tool-desc">Convert PDF to DOCX</div>
+            </div>
+            <div class="tool-card" onclick="runTool('xlsx_to_pdf')">
+                <span class="tool-icon">📊</span>
+                <div class="tool-name">Excel → PDF</div>
+                <div class="tool-desc">Convert XLSX to PDF</div>
+            </div>
+            <div class="tool-card" onclick="runTool('pdf_to_xlsx')">
+                <span class="tool-icon">📉</span>
+                <div class="tool-name">PDF → Excel</div>
+                <div class="tool-desc">Convert PDF to XLSX</div>
+            </div>
+            <div class="tool-card" onclick="runTool('csv_to_xlsx')">
+                <span class="tool-icon">🧾</span>
+                <div class="tool-name">CSV → Excel</div>
+                <div class="tool-desc">Convert CSV to XLSX</div>
+            </div>
+            <div class="tool-card" onclick="runTool('xlsx_to_csv')">
+                <span class="tool-icon">📋</span>
+                <div class="tool-name">Excel → CSV</div>
+                <div class="tool-desc">Convert XLSX to CSV</div>
+            </div>
+            <div class="tool-card" onclick="runTool('pptx_to_pdf')">
+                <span class="tool-icon">📽️</span>
+                <div class="tool-name">PPTX → PDF</div>
+                <div class="tool-desc">Convert PowerPoint to PDF</div>
+            </div>
+            <div class="tool-card" onclick="runTool('pdf_to_pptx')">
+                <span class="tool-icon">🎞️</span>
+                <div class="tool-name">PDF → PPTX</div>
+                <div class="tool-desc">Convert PDF to PPTX</div>
+            </div>
+            <div class="tool-card" onclick="runTool('image_to_pdf')">
+                <span class="tool-icon">🖼️</span>
+                <div class="tool-name">Image → PDF</div>
+                <div class="tool-desc">Convert images to PDF</div>
+            </div>
+            <div class="tool-card" onclick="runTool('pdf_to_image')">
+                <span class="tool-icon">📷</span>
+                <div class="tool-name">PDF → Image</div>
+                <div class="tool-desc">Convert PDF to images</div>
+            </div>
+            <div class="tool-card" onclick="runTool('text_to_pdf')">
+                <span class="tool-icon">🔡</span>
+                <div class="tool-name">Text → PDF</div>
+                <div class="tool-desc">Convert text to PDF</div>
+            </div>
+            <div class="tool-card" onclick="runTool('pdf_to_text')">
+                <span class="tool-icon">📜</span>
+                <div class="tool-name">PDF → Text</div>
+                <div class="tool-desc">Extract text from PDF</div>
+            </div>
+        </div>
+
+        <div class="section-title">🌐 Language & Media</div>
+        <div class="tool-grid">
+            <div class="tool-card" onclick="runTool('translate')">
+                <span class="tool-icon">🌐</span>
+                <div class="tool-name">Translate</div>
+                <div class="tool-desc">Translate text instantly</div>
+            </div>
+            <div class="tool-card" onclick="runTool('transcript')">
+                <span class="tool-icon">🎬</span>
+                <div class="tool-name">YT Transcript</div>
+                <div class="tool-desc">Get YouTube video text</div>
+            </div>
+        </div>
+
+        <div class="section-title">📦 Optional Dependencies</div>
+        <p style="font-size:13px; color:var(--text-desc); margin: -8px 0 14px;">
+            These packages are only needed for specific tools. Install only what you use.
+            Click <strong>Check</strong> to see what's already installed.
+        </p>
+        <div style="margin-bottom:10px;">
+            <button class="check-btn" onclick="checkDeps()">🔍 Check installed</button>
+        </div>
+        <div id="depsGrid" class="deps-grid">
+            <!-- filled by JS after check_deps() -->
+            <div style="color:var(--text-desc); font-size:13px; padding:8px;">
+                Click "Check installed" to see dependency status.
+            </div>
+        </div>
+
+        <div class="section-title">🧩 Install UserScript Extension</div>
+        <div class="install-box">
+            <input type="text" id="scriptUrl" placeholder="Paste a Greasy Fork page URL or any .user.js link…" />
+            <button id="installBtn" onclick="installScript()">⬇️ Install</button>
+            <div id="installStatus"></div>
+        </div>
+
+        <div class="section-title">🛠️ Utilities</div>
+        <div class="tool-grid">
+            <div class="tool-card" onclick="runTool('archive')">
+                <span class="tool-icon">📦</span>
+                <div class="tool-name">Archive Tools</div>
+                <div class="tool-desc">Zip, 7z, Tar utilities</div>
+            </div>
+            <div class="tool-card" onclick="runTool('timer')">
+                <span class="tool-icon">⏱</span>
+                <div class="tool-name">Timer</div>
+                <div class="tool-desc">Countdown timer</div>
+            </div>
+            <div class="tool-card" onclick="runTool('qr')">
+                <span class="tool-icon">🔳</span>
+                <div class="tool-name">QR Generator</div>
+                <div class="tool-desc">Create QR codes</div>
+            </div>
+            <div class="tool-card" onclick="runTool('calculator')">
+                <span class="tool-icon">🔢</span>
+                <div class="tool-name">Calculator</div>
+                <div class="tool-desc">Quick calculations</div>
+            </div>
+            <div class="tool-card" onclick="runTool('unit_converter')">
+                <span class="tool-icon">📐</span>
+                <div class="tool-name">Unit Converter</div>
+                <div class="tool-desc">Length, weight, temp and more</div>
+            </div>
+            <div class="tool-card" onclick="runTool('programmer_calc')">
+                <span class="tool-icon">🖥️</span>
+                <div class="tool-name">Programmer Calc</div>
+                <div class="tool-desc">Bin / Hex / Oct / Dec converter</div>
+            </div>
+            <div class="tool-card" onclick="runTool('weather')">
+                <span class="tool-icon">🌡</span>
+                <div class="tool-name">Weather</div>
+                <div class="tool-desc">Check current weather</div>
+            </div>
+            <div class="tool-card" onclick="runTool('note')">
+                <span class="tool-icon">📝</span>
+                <div class="tool-name">Take Note</div>
+                <div class="tool-desc">Quickly jot down your thoughts</div>
+            </div>
+            <div class="tool-card" onclick="runTool('web_terminal')">
+                <span class="tool-icon">💻</span>
+                <div class="tool-name">Terminal</div>
+                <div class="tool-desc">Open system terminal</div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p style="font-size: 14px; color: var(--text-desc); margin-bottom: 20px;">
+                Developed by <a href="https://github.com/BayazidHabibSiddikee">Bayazid Habib Siddikee</a>
+            </p>
+            <p style="font-size: 18px; color: var(--heading); font-weight: bold; margin-bottom: 5px;">Buy me a cup of coffee! ☕</p>
+            <img src="qrc:///qrcode.png" alt="Donate QR Code">
+        </div>
+    </div>
+
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <script>
+        var backend = null;
+
+        new QWebChannel(qt.webChannelTransport, function(channel) {
+            backend = channel.objects.backend;
+
+            if (backend.extensionInstalled) {
+                backend.extensionInstalled.connect(function(success, message) {
+                    onExtensionInstalled(success, message);
+                });
+            }
+            if (backend.depsStatus) {
+                backend.depsStatus.connect(function(json) {
+                    onDepsStatus(JSON.parse(json));
+                });
+            }
+            if (backend.installProgress) {
+                backend.installProgress.connect(function(json) {
+                    onInstallProgress(JSON.parse(json));
+                });
+            }
+
+            // Auto-check deps on load
+            backend.check_deps();
+        });
+
+        // Allow pressing Enter in the URL input to trigger install
+        document.getElementById('scriptUrl').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') installScript();
+        });
+
+        // ── Tool runner ───────────────────────────────────────────────────
+        function runTool(name) {
+            if (backend) {
+                backend.run_tool(name);
+            } else {
+                setTimeout(function() {
+                    if (backend) backend.run_tool(name);
+                    else alert("Tools backend not available. Please reload the page.");
+                }, 300);
+            }
+        }
+
+        // ── Extension install ─────────────────────────────────────────────
+        function installScript() {
+            var url = document.getElementById('scriptUrl').value.trim();
+            if (!url) return;
+            var btn    = document.getElementById('installBtn');
+            var status = document.getElementById('installStatus');
+            if (!backend) {
+                status.style.color = '#e06c75';
+                status.textContent = '❌ Backend not ready — try again in a moment.';
+                return;
+            }
+            btn.disabled = true;
+            status.style.color = 'var(--text-desc)';
+            status.textContent = '⏳ Downloading…';
+            backend.install_extension(url);
+        }
+
+        function onExtensionInstalled(success, message) {
+            var btn    = document.getElementById('installBtn');
+            var status = document.getElementById('installStatus');
+            btn.disabled = false;
+            if (success) {
+                status.style.color = '#98c379';
+                status.textContent = '✅ Installed: ' + message;
+                document.getElementById('scriptUrl').value = '';
+            } else {
+                status.style.color = '#e06c75';
+                status.textContent = '❌ Failed: ' + message;
+            }
+        }
+
+        // ── Dependency check / install ────────────────────────────────────
+        function checkDeps() {
+            if (!backend) return;
+            document.getElementById('depsGrid').innerHTML =
+                '<div style="color:var(--text-desc);font-size:13px;padding:8px;">⏳ Checking…</div>';
+            backend.check_deps();
+        }
+
+        function onDepsStatus(status) {
+            var grid = document.getElementById('depsGrid');
+            grid.innerHTML = '';
+            var groups = Object.keys(status);
+            if (groups.length === 0) {
+                grid.innerHTML = '<div style="color:var(--text-desc);font-size:13px;">No dependency info available.</div>';
+                return;
+            }
+            groups.forEach(function(id) {
+                var g = status[id];
+                var card = document.createElement('div');
+                card.className = 'dep-card';
+                card.id = 'dep-card-' + id;
+
+                var nameEl = document.createElement('div');
+                nameEl.className = 'dep-name';
+                nameEl.textContent = g.label;
+
+                var descEl = document.createElement('div');
+                descEl.className = 'dep-desc';
+                descEl.textContent = g.description;
+
+                var stEl = document.createElement('div');
+                stEl.className = 'dep-status ' + (g.installed ? 'ok' : 'miss');
+                stEl.id = 'dep-status-' + id;
+                stEl.textContent = g.installed ? '✅ Installed' : '⚠ Not installed';
+
+                var msgEl = document.createElement('div');
+                msgEl.className = 'dep-msg';
+                msgEl.id = 'dep-msg-' + id;
+
+                card.appendChild(nameEl);
+                card.appendChild(descEl);
+                card.appendChild(stEl);
+                card.appendChild(msgEl);
+
+                if (!g.installed) {
+                    var btn = document.createElement('button');
+                    btn.className = 'dep-install-btn';
+                    btn.id = 'dep-btn-' + id;
+                    btn.textContent = '⬇️ Install';
+                    btn.onclick = (function(gid) {
+                        return function() { installDep(gid); };
+                    })(id);
+                    card.appendChild(btn);
+                }
+
+                grid.appendChild(card);
+            });
+        }
+
+        function installDep(id) {
+            if (!backend) return;
+            var btn = document.getElementById('dep-btn-' + id);
+            if (btn) btn.disabled = true;
+            var msg = document.getElementById('dep-msg-' + id);
+            if (msg) msg.textContent = '⏳ Starting install — a password prompt will appear…';
+            backend.install_deps(id);
+        }
+
+        function onInstallProgress(data) {
+            var id    = data.group;
+            var state = data.state;
+            var txt   = data.msg;
+
+            var stEl  = document.getElementById('dep-status-' + id);
+            var msgEl = document.getElementById('dep-msg-'    + id);
+            var btn   = document.getElementById('dep-btn-'    + id);
+
+            if (msgEl) msgEl.textContent = txt;
+
+            if (state === 'done') {
+                if (stEl)  { stEl.className = 'dep-status ok'; stEl.textContent = '✅ Installed'; }
+                if (btn)   btn.remove();
+                if (msgEl) { msgEl.style.color = '#98c379'; }
+            } else if (state === 'failed') {
+                if (btn)   btn.disabled = false;
+                if (msgEl) msgEl.style.color = '#e06c75';
+            } else {
+                // installing
+                if (msgEl) msgEl.style.color = 'var(--text-desc)';
+            }
+        }
+    </script>
+</body>
+</html>

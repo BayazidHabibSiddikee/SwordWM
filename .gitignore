@@ -1,0 +1,71 @@
+# Compiled binaries
+swordwm-wallpaper
+swordwm/swordwm
+swordwm/build/
+*.o
+*.so
+*.a
+*.out
+
+# CMake build artifacts
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+Makefile.cmake
+_CPack_Packages/
+*.cmake
+!CMakeLists.txt
+
+# Qt / C++ build
+*.moc
+moc_*.cpp
+qrc_*.cpp
+ui_*.h
+*.pro.user
+*.qmake.stash
+.qmake.cache
+.qmake.stash
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+.eggs/
+venv/
+.venv/
+.env
+
+# Large test/install artifacts
+install_test/
+
+# Packaging output
+packaging/linux/*.deb
+packaging/linux/*.rpm
+packaging/*.AppImage
+packaging/windows/*.exe
+packaging/windows/*.zip
+*.deb
+*.rpm
+
+# Logs and runtime files
+*.log
+*.pid
+*.pid.lock
+
+# Editor artifacts
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Compiled VRM model (large binary, not source)
+src/marin.vrm
+install_test/share/swordfish/marin.vrm
