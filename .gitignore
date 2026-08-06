@@ -7,6 +7,25 @@ swordwm/build/
 *.a
 *.out
 
+# CMake / build output directories
+build/
+Build/
+cmake-build-*/
+*.dir/
+
+# Windows build artifacts
+*.exe
+*.dll
+*.obj
+*.res
+*.tlog
+*.recipe
+*.lastbuildstate
+*.vcxproj
+*.vcxproj.filters
+*.sln
+*_autogen/
+
 # CMake build artifacts
 CMakeCache.txt
 CMakeFiles/
@@ -69,3 +88,21 @@ Thumbs.db
 # Compiled VRM model (large binary, not source)
 src/marin.vrm
 install_test/share/swordfish/marin.vrm
+
+# Top-level compiled tool binaries (built from tools/ or cpp-*/build/)
+swordconv
+sworddeck
+swordfm
+swordgraph
+swordshare
+
+# Copies of tools in tools/ dir
+tools/swordconv
+tools/swordgraph
+tools/swordshare
+
+# Large binary assets
+tools/alarm.wav
+
+# Windows icon binary (regenerate from source SVG)
+packaging/windows/swordfish.ico
