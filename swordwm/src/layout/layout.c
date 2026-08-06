@@ -2,6 +2,7 @@
  * src/layout/layout.c — tiling, monocle and floating layout engine
  * ========================================================= */
 #include "swordwm.h"
+#include "config_parser.h"
 
 /* ── Count tiled (non-floating, non-fullscreen) clients ──── */
 static int count_tiled(Workspace *ws) {
@@ -11,30 +12,33 @@ static int count_tiled(Workspace *ws) {
     return n;
 }
 
+/* ── Clamp a window dimension to a sane minimum ─────────── */
+static int clamp_dim(int v, int min) { return v < min ? min : v; }
+
 /* ── layout_tile: master/stack ───────────────────────────── */
 static void layout_tile(Workspace *ws) {
     int n = count_tiled(ws);
     if (n == 0) return;
 
     int gap  = ws->gap;
-    int ox   = GAP_OUTER;
-    int oy   = GAP_OUTER;
-    int ow   = wm->sw - GAP_OUTER * 2;
-    int oh   = wm->sh - GAP_OUTER * 2;
+    int ox   = cfg.gap_outer;
+    int oy   = cfg.gap_outer;
+    int ow   = clamp_dim(wm->sw - cfg.gap_outer * 2, 120);
+    int oh   = clamp_dim(wm->sh - cfg.gap_outer * 2,  60);
 
     if (n == 1) {
-        /* Single window: fill entire area */
+        /* Single window: fill entire work area, keep title bar */
         for (Client *c = ws->head; c; c = c->next) {
             if (c->floating || c->fullscreen) continue;
-            int fw = ow;
-            int fh = oh;
-            c->x = ox; c->y = oy; c->w = fw; c->h = fh;
+            c->x = ox; c->y = oy; c->w = ow; c->h = oh;
             XMoveResizeWindow(wm->dpy, c->frame,
-                              c->x, c->y, c->w, c->h);
+                              c->x, c->y,
+                              (unsigned)c->w, (unsigned)c->h);
             XMoveResizeWindow(wm->dpy, c->win,
-                              0, TITLE_BAR_HEIGHT,
-                              c->w - BORDER_WIDTH * 2,
-                              c->h - TITLE_BAR_HEIGHT - BORDER_WIDTH * 2);
+                              0, cfg.title_bar_height,
+                              (unsigned)clamp_dim(c->w - cfg.border_width * 2, 1),
+                              (unsigned)clamp_dim(c->h - cfg.title_bar_height
+                                                        - cfg.border_width * 2, 1));
         }
         return;
     }
@@ -43,7 +47,7 @@ static void layout_tile(Workspace *ws) {
     int master_w = ow / 2 - gap / 2;
     int stack_w  = ow - master_w - gap;
     int stack_x  = ox + master_w + gap;
-    int stack_n  = n - 1;
+    int stack_n  = n - 1;   /* guaranteed > 0 since n >= 2 */
 
     int idx = 0;
     for (Client *c = ws->head; c; c = c->next) {
@@ -56,9 +60,10 @@ static void layout_tile(Workspace *ws) {
             c->w = master_w;
             c->h = oh;
         } else {
-            /* Stack windows */
-            int each_h = (oh - gap * (stack_n - 1)) / stack_n;
-            int pos     = idx - 1;
+            /* Stack windows — stack_n > 0 guaranteed */
+            int each_h = clamp_dim(
+                (oh - gap * (stack_n - 1)) / stack_n, 60);
+            int pos = idx - 1;
             c->x = stack_x;
             c->y = oy + pos * (each_h + gap);
             c->w = stack_w;
@@ -66,31 +71,35 @@ static void layout_tile(Workspace *ws) {
         }
 
         XMoveResizeWindow(wm->dpy, c->frame,
-                          c->x, c->y, c->w, c->h);
+                          c->x, c->y,
+                          (unsigned)c->w, (unsigned)c->h);
         XMoveResizeWindow(wm->dpy, c->win,
-                          0, TITLE_BAR_HEIGHT,
-                          c->w - BORDER_WIDTH * 2,
-                          c->h - TITLE_BAR_HEIGHT - BORDER_WIDTH * 2);
+                          0, cfg.title_bar_height,
+                          (unsigned)clamp_dim(c->w - cfg.border_width * 2, 1),
+                          (unsigned)clamp_dim(c->h - cfg.title_bar_height
+                                                    - cfg.border_width * 2, 1));
         idx++;
     }
 }
 
 /* ── layout_monocle: all fullscreen, focused on top ─────── */
 static void layout_monocle(Workspace *ws) {
-    int ox = GAP_OUTER;
-    int oy = GAP_OUTER;
-    int ow = wm->sw - GAP_OUTER * 2;
-    int oh = wm->sh - GAP_OUTER * 2;
+    int ox = cfg.gap_outer;
+    int oy = cfg.gap_outer;
+    int ow = clamp_dim(wm->sw - cfg.gap_outer * 2, 120);
+    int oh = clamp_dim(wm->sh - cfg.gap_outer * 2,  60);
 
     for (Client *c = ws->head; c; c = c->next) {
         if (c->floating || c->fullscreen) continue;
         c->x = ox; c->y = oy; c->w = ow; c->h = oh;
         XMoveResizeWindow(wm->dpy, c->frame,
-                          c->x, c->y, c->w, c->h);
+                          c->x, c->y,
+                          (unsigned)c->w, (unsigned)c->h);
         XMoveResizeWindow(wm->dpy, c->win,
-                          0, TITLE_BAR_HEIGHT,
-                          c->w - BORDER_WIDTH * 2,
-                          c->h - TITLE_BAR_HEIGHT - BORDER_WIDTH * 2);
+                          0, cfg.title_bar_height,
+                          (unsigned)clamp_dim(c->w - cfg.border_width * 2, 1),
+                          (unsigned)clamp_dim(c->h - cfg.title_bar_height
+                                                    - cfg.border_width * 2, 1));
     }
     /* Raise the focused window on top */
     if (ws->focused)
@@ -99,26 +108,26 @@ static void layout_monocle(Workspace *ws) {
 
 /* ── layout_floating: no rearrangement ──────────────────── */
 static void layout_floating(Workspace *ws) {
-    /* Nothing to do — windows stay wherever they were placed */
-    (void)ws;
+    (void)ws; /* Windows stay wherever they were placed */
 }
 
 /* ── arrange_workspace ───────────────────────────────────── */
 void arrange_workspace(Workspace *ws) {
     if (!ws) return;
 
-    /* Handle fullscreen clients first — they cover everything */
+    /* Handle fullscreen clients — they cover everything */
     for (Client *c = ws->head; c; c = c->next) {
         if (c->fullscreen) {
             XMoveResizeWindow(wm->dpy, c->frame,
-                              0, 0, wm->sw, wm->sh);
+                              0, 0,
+                              (unsigned)wm->sw, (unsigned)wm->sh);
             XMoveResizeWindow(wm->dpy, c->win,
-                              0, 0, wm->sw, wm->sh);
+                              0, 0,
+                              (unsigned)wm->sw, (unsigned)wm->sh);
             XRaiseWindow(wm->dpy, c->frame);
         }
     }
 
-    /* Run the layout for non-fullscreen tiled windows */
     switch (ws->layout) {
         case LAYOUT_TILE:    layout_tile(ws);    break;
         case LAYOUT_MONOCLE: layout_monocle(ws); break;

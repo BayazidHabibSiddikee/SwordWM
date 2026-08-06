@@ -42,4 +42,15 @@ void ewmh_update_desktop_names(void);
 /* Announce _NET_WORKAREA (usable screen area). */
 void ewmh_update_workarea(void);
 
+/* Set _NET_WM_PID on a client (reads client's own PID if set). */
+void ewmh_set_pid(Client *c);
+
+/* Set _NET_FRAME_EXTENTS on a client window.
+ * Reports how many pixels our frame adds: left, right, top, bottom. */
+void ewmh_set_frame_extents(Client *c);
+
+/* Read _NET_WM_STRUT/_NET_WM_STRUT_PARTIAL from a dock/panel window
+ * and update _NET_WORKAREA to exclude the reserved space. */
+void ewmh_apply_strut(Window win);
+
 #endif /* EWMH_H */

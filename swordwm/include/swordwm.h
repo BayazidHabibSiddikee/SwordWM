@@ -19,7 +19,7 @@
 #include <time.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <sys/wait.h>
+#include <sys/select.h>
 #include <sys/wait.h>
 
 #include "types.h"
@@ -40,7 +40,6 @@ int  x11_error_handler(Display *dpy, XErrorEvent *e);
 int  x11_error_handler_startup(Display *dpy, XErrorEvent *e);
 
 /* ── event loop (x11.c) ──────────────────────────────────── */
-void event_loop(void);
 void dispatch_event(XEvent *ev);
 
 /* ── client.c ────────────────────────────────────────────── */

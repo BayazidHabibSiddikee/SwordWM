@@ -5,6 +5,9 @@
 #include "swordwm.h"
 #include "config_parser.h"
 
+/* dispatch_event is defined in x11.c */
+void dispatch_event(XEvent *ev);
+
 /* Global WM state */
 WMState *wm = NULL;
 
@@ -45,10 +48,10 @@ static int do_reload(void) {
         fprintf(stderr, "swordwm: no pid file at %s\n", pid_path);
         return 1;
     }
-    int pid;
-    if (fscanf(f, "%d", &pid) == 1) {
+    pid_t pid = 0;
+    if (fscanf(f, "%d", &pid) == 1 && pid > 1) {
         kill(pid, SIGHUP);
-        fprintf(stderr, "swordwm: sent SIGHUP to %d\n", pid);
+        fprintf(stderr, "swordwm: sent SIGHUP to %d\n", (int)pid);
     }
     fclose(f);
     return 0;
@@ -59,10 +62,9 @@ static void write_pid(void) {
     const char *home = getenv("HOME");
     if (!home) return;
 
-    /* Ensure dir exists */
     char dir[256];
     snprintf(dir, sizeof(dir), "%s/.config/swordwm", home);
-    mkdir(dir, 0755);
+    mkdir(dir, 0700);  /* 0700 — only owner can read PID dir */
 
     char path[512];
     snprintf(path, sizeof(path), "%s/swordwm.pid", dir);
@@ -82,13 +84,14 @@ static void remove_pid(void) {
 int main(int argc, char *argv[]) {
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--reload") == 0) return do_reload();
-        if (strcmp(argv[i], "-v") == 0)       { printf("swordwm 0.1.0\n"); return 0; }
-        if (strcmp(argv[i], "-h") == 0)       { usage(); return 0; }
+        if (strcmp(argv[i], "-v") == 0) { printf("swordwm 0.1.0\n"); return 0; }
+        if (strcmp(argv[i], "-h") == 0) { usage(); return 0; }
         fprintf(stderr, "swordwm: unknown option: %s\n", argv[i]);
-        usage(); return 1;
+        usage();
+        return 1;
     }
 
-    /* Load runtime config first (before X connect so defaults are ready) */
+    /* Load runtime config before X connect so defaults are ready */
     config_load();
 
     /* Connect to X, set up workspaces, grab keys */
@@ -106,32 +109,44 @@ int main(int argc, char *argv[]) {
     /* Write PID file for --reload */
     write_pid();
 
-    /* Signal handlers */
+    /* Signal handlers (override the ones set by x11_connect) */
     signal(SIGHUP,  handle_sighup);
     signal(SIGCHLD, handle_sigchld);
 
     fprintf(stderr, "swordwm: running — Mod+Shift+E to quit\n");
 
-    /* Event loop — also checks g_reload flag */
+    /*
+     * Event loop — uses select() on the X connection fd so we can
+     * respond to signals (g_reload) without busy-waiting.
+     * select() will be interrupted by SIGHUP/SIGCHLD (EINTR) which
+     * is exactly what we want — we check g_reload then re-block.
+     */
+    int xfd = ConnectionNumber(wm->dpy);
     XEvent ev;
+
     while (wm->running) {
-        /* Check SIGHUP reload flag */
+        /* Check SIGHUP reload flag before blocking */
         if (g_reload) {
             g_reload = 0;
             config_reload();
         }
 
-        /* Non-blocking event check so we can poll g_reload */
-        if (!XPending(wm->dpy)) {
-            struct timespec ts = { 0, 10000000 }; /* 10ms */
-            nanosleep(&ts, NULL);
-            continue;
+        /* Drain any already-queued events without blocking */
+        while (XPending(wm->dpy)) {
+            XNextEvent(wm->dpy, &ev);
+            dispatch_event(&ev);
         }
 
-        XNextEvent(wm->dpy, &ev);
-        /* dispatch via event_loop's handler table */
-        extern void dispatch_event(XEvent *);
-        dispatch_event(&ev);
+        if (!wm->running) break;
+
+        /* Block until X has data or a signal interrupts us */
+        fd_set rfds;
+        FD_ZERO(&rfds);
+        FD_SET(xfd, &rfds);
+        /* 1-second timeout so g_reload is never stale for long */
+        struct timeval tv = { 1, 0 };
+        select(xfd + 1, &rfds, NULL, NULL, &tv);
+        /* EINTR (signal) or timeout — loop back and check g_reload */
     }
 
     remove_pid();

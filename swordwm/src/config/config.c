@@ -146,6 +146,7 @@ static void parse_bind(const char *keys, const char *action) {
     else if (streq(act, "gap_inc"))           { fn = action_gap_inc; }
     else if (streq(act, "gap_dec"))           { fn = action_gap_dec; }
     else if (streq(act, "quit"))              { fn = action_quit; }
+    else if (streq(act, "reload_config"))     { fn = action_reload_config; }
     else if (streq(act, "workspace")) {
         fn = action_switch_workspace;
         if (act_arg) {
@@ -295,11 +296,17 @@ void config_apply(void) {
 /* ── config_run_autostart ────────────────────────────────── */
 void config_run_autostart(void) {
     for (int i = 0; i < cfg.n_autostart; i++) {
-        fprintf(stderr, "swordwm: autostart: %s\n", cfg.autostart[i]);
-        if (fork() == 0) {
+        const char *cmd = cfg.autostart[i];
+        if (!cmd[0]) continue;
+        fprintf(stderr, "swordwm: autostart: %s\n", cmd);
+        pid_t pid = fork();
+        if (pid == 0) {
             setsid();
-            execlp("/bin/sh", "sh", "-c", cfg.autostart[i], NULL);
-            exit(1);
+            /* execv with explicit argv — same rationale as action_spawn */
+            char *argv[] = { "/bin/sh", "-c", (char *)cmd, NULL };
+            execv("/bin/sh", argv);
+            _exit(1);
         }
+        /* parent: pid > 0 → child reaped by SIGCHLD handler */
     }
 }

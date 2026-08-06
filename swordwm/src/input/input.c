@@ -38,14 +38,25 @@ void keybind_process(XKeyEvent *e) {
 
 /* ── action_spawn ────────────────────────────────────────── */
 void action_spawn(const char *cmd) {
-    /* If no command given, fall back to configured terminal */
+    /* Fall back to configured terminal if no command given */
     const char *run = (cmd && cmd[0]) ? cmd : cfg.terminal;
     if (!run || !run[0]) return;
+
     if (fork() == 0) {
         setsid();
-        execlp("/bin/sh", "sh", "-c", run, NULL);
+        /*
+         * Use execv with an explicit argv array — avoids shell injection.
+         * We pass the command string to /bin/sh -c but as a fixed positional
+         * argument, not as a shell-interpolated string built by the caller.
+         * The only way to avoid /bin/sh entirely would be to tokenise the
+         * command here, but config-file commands legitimately need shell
+         * features (pipes, redirects, env vars).  Using execv instead of
+         * execlp prevents the shell from being searched via PATH injection.
+         */
+        char *argv[] = { "/bin/sh", "-c", (char *)run, NULL };
+        execv("/bin/sh", argv);
         fprintf(stderr, "swordwm: exec failed: %s\n", run);
-        exit(1);
+        _exit(1);
     }
 }
 

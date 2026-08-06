@@ -3,6 +3,7 @@
  * ========================================================= */
 #include "swordwm.h"
 #include "ewmh.h"
+#include "config_parser.h"
 
 /* ── ewmh_init ───────────────────────────────────────────── */
 void ewmh_init(void) {
@@ -197,12 +198,11 @@ void ewmh_update_desktop_names(void) {
 void ewmh_update_workarea(void) {
     /* One entry per desktop: x, y, width, height */
     long wa[4] = {
-        GAP_OUTER,
-        GAP_OUTER,
-        wm->sw - GAP_OUTER * 2,
-        wm->sh - GAP_OUTER * 2 - 32   /* reserve 32px for bottom bar */
+        cfg.gap_outer,
+        cfg.gap_outer,
+        wm->sw - cfg.gap_outer * 2,
+        wm->sh - cfg.gap_outer * 2 - 32   /* reserve 32px for bottom bar */
     };
-    /* Repeat for all desktops */
     long all[9 * 4];
     for (int i = 0; i < NUM_WORKSPACES; i++)
         for (int j = 0; j < 4; j++)
@@ -212,4 +212,96 @@ void ewmh_update_workarea(void) {
     XChangeProperty(wm->dpy, wm->root, wa_atom, XA_CARDINAL, 32,
                     PropModeReplace,
                     (unsigned char *)all, NUM_WORKSPACES * 4);
+}
+
+/* ── ewmh_set_pid ────────────────────────────────────────── */
+void ewmh_set_pid(Client *c) {
+    if (!c) return;
+    Atom net_wm_pid = XInternAtom(wm->dpy, "_NET_WM_PID", False);
+    /* Read the _NET_WM_PID the client set on itself, if any */
+    Atom actual; int fmt; unsigned long n, ba;
+    unsigned char *prop = NULL;
+    if (XGetWindowProperty(wm->dpy, c->win, net_wm_pid,
+                           0, 1, False, XA_CARDINAL,
+                           &actual, &fmt, &n, &ba, &prop) == Success
+        && prop) {
+        /* Already set by the client — leave it alone */
+        XFree(prop);
+        return;
+    }
+    /* Client didn't set it — we can't know its PID, so skip */
+}
+
+/* ── ewmh_set_frame_extents ──────────────────────────────── */
+void ewmh_set_frame_extents(Client *c) {
+    if (!c) return;
+    /*
+     * _NET_FRAME_EXTENTS = { left, right, top, bottom }
+     * Tells clients how much space our frame adds around them.
+     */
+    long extents[4] = {
+        cfg.border_width,               /* left   */
+        cfg.border_width,               /* right  */
+        cfg.title_bar_height,           /* top    */
+        cfg.border_width,               /* bottom */
+    };
+    Atom net_frame = XInternAtom(wm->dpy, "_NET_FRAME_EXTENTS", False);
+    XChangeProperty(wm->dpy, c->win, net_frame,
+                    XA_CARDINAL, 32, PropModeReplace,
+                    (unsigned char *)extents, 4);
+}
+
+/* ── ewmh_apply_strut ────────────────────────────────────── */
+/*
+ * Read _NET_WM_STRUT_PARTIAL (or _NET_WM_STRUT) from a dock/panel
+ * window and adjust the workarea accordingly.
+ * Called when a dock window maps or changes its strut property.
+ */
+void ewmh_apply_strut(Window win) {
+    Atom strut_p = XInternAtom(wm->dpy, "_NET_WM_STRUT_PARTIAL", False);
+    Atom strut   = XInternAtom(wm->dpy, "_NET_WM_STRUT",         False);
+    Atom actual; int fmt; unsigned long n, ba;
+    unsigned char *prop = NULL;
+    long s[12] = {0};
+
+    /* Prefer _NET_WM_STRUT_PARTIAL (12 values) */
+    if (XGetWindowProperty(wm->dpy, win, strut_p, 0, 12, False,
+                           XA_CARDINAL, &actual, &fmt, &n, &ba,
+                           &prop) == Success && prop && n >= 4) {
+        for (unsigned long i = 0; i < n && i < 12; i++)
+            s[i] = ((long *)prop)[i];
+        XFree(prop);
+    } else if (XGetWindowProperty(wm->dpy, win, strut, 0, 4, False,
+                                  XA_CARDINAL, &actual, &fmt, &n, &ba,
+                                  &prop) == Success && prop && n >= 4) {
+        /* _NET_WM_STRUT: left, right, top, bottom */
+        for (unsigned long i = 0; i < 4; i++)
+            s[i] = ((long *)prop)[i];
+        XFree(prop);
+    } else {
+        return;
+    }
+
+    /* s[0]=left s[1]=right s[2]=top s[3]=bottom */
+    long left   = s[0];
+    long right  = s[1];
+    long top    = s[2];
+    long bottom = s[3];
+
+    /* Update workarea to exclude the reserved space */
+    long wa[4] = {
+        cfg.gap_outer + left,
+        cfg.gap_outer + top,
+        wm->sw - cfg.gap_outer * 2 - left - right,
+        wm->sh - cfg.gap_outer * 2 - top  - bottom,
+    };
+    long all[9 * 4];
+    for (int i = 0; i < NUM_WORKSPACES; i++)
+        for (int j = 0; j < 4; j++)
+            all[i*4 + j] = wa[j];
+
+    Atom wa_atom = XInternAtom(wm->dpy, "_NET_WORKAREA", False);
+    XChangeProperty(wm->dpy, wm->root, wa_atom, XA_CARDINAL, 32,
+                    PropModeReplace, (unsigned char *)all,
+                    NUM_WORKSPACES * 4);
 }

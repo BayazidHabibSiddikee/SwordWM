@@ -271,14 +271,9 @@ static void handle_property_notify(XEvent *e) {
     if (!c) return;
 
     if (ev->atom == XA_WM_NAME || ev->atom == wm->net_wm_name) {
-        /* Update stored title */
-        XFetchName(wm->dpy, c->win, &(char *){ NULL });
-        char *name = NULL;
-        if (XFetchName(wm->dpy, c->win, &name) && name) {
-            strncpy(c->title, name, sizeof(c->title) - 1);
-            c->title[sizeof(c->title) - 1] = '\0';
-            XFree(name);
-        }
+        /* decorate_update_title reads _NET_WM_NAME then WM_NAME,
+         * frees both allocations, and redraws the title bar. */
+        decorate_update_title(c);
     }
 }
 
@@ -393,16 +388,6 @@ static void (*handlers[LASTEvent])(XEvent *) = {
 void dispatch_event(XEvent *ev) {
     if (handlers[ev->type])
         handlers[ev->type](ev);
-}
-
-/* ── event_loop — kept for compatibility / Xephyr testing ── */
-void event_loop(void) {
-    XEvent ev;
-    extern volatile sig_atomic_t g_running;
-    while (wm->running) {
-        XNextEvent(wm->dpy, &ev);
-        dispatch_event(&ev);
-    }
 }
 
 /* ── x11_cleanup ─────────────────────────────────────────── */

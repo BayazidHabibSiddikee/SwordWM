@@ -2,9 +2,9 @@
 #define CONFIG_H
 
 /* =========================================================
- * config.h — default configuration constants for SwordWM
- * Edit here to change defaults before compiling.
- * Runtime config file support comes in Step 11.
+ * config.h — compile-time default configuration for SwordWM
+ * Edit here to change built-in defaults before compiling.
+ * Runtime overrides live in ~/.config/swordwm/config
  * ========================================================= */
 
 /* ── Modifier key ─────────────────────────────────────────── */

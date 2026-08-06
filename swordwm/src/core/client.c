@@ -118,6 +118,9 @@ Client *client_add(Window win, Workspace *ws) {
     /* Set _NET_WM_DESKTOP */
     ewmh_set_client_desktop(c, ws->id);
 
+    /* Tell clients how much space our frame adds */
+    ewmh_set_frame_extents(c);
+
     ewmh_update_client_list();
 
     /* Draw the initial title bar */
@@ -215,7 +218,12 @@ void manage_window(Window win) {
     if (!XGetWindowAttributes(wm->dpy, win, &wa)) return;
 
     /* Skip override-redirect windows (panels, docks, wallpaper) */
-    if (wa.override_redirect) return;
+    if (wa.override_redirect) {
+        /* Even though we don't manage it, read its strut so the
+         * workarea respects the panel/dock reserved space. */
+        ewmh_apply_strut(win);
+        return;
+    }
 
     /* Skip windows that are not viewable and not mapped normal */
     if (wa.map_state == IsUnmapped) return;
