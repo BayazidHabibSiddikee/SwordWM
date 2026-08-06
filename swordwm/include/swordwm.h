@@ -16,6 +16,11 @@
 #include <unistd.h>
 #include <signal.h>
 #include <errno.h>
+#include <time.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <sys/wait.h>
 
 #include "types.h"
 #include "config.h"
@@ -36,6 +41,7 @@ int  x11_error_handler_startup(Display *dpy, XErrorEvent *e);
 
 /* ── event loop (x11.c) ──────────────────────────────────── */
 void event_loop(void);
+void dispatch_event(XEvent *ev);
 
 /* ── client.c ────────────────────────────────────────────── */
 Client    *client_add(Window win, Workspace *ws);
@@ -72,5 +78,6 @@ void action_gap_dec(const char *arg);
 void action_quit(const char *arg);
 void action_switch_workspace(const char *id);
 void action_move_to_workspace(const char *id);
+void action_reload_config(const char *arg);
 
 #endif /* SWORDWM_H */

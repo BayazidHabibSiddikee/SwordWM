@@ -17,7 +17,8 @@ SRCS = src/main.c \
        src/layout/layout.c \
        src/input/input.c \
        src/decorate/decorate.c \
-       src/ewmh/ewmh.c
+       src/ewmh/ewmh.c \
+       src/config/config.c
 
 OBJS = $(SRCS:.c=.o)
 BIN  = swordwm

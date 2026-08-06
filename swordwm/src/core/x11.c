@@ -2,6 +2,7 @@
  * src/core/x11.c — X11 connection, event loop, signal handling
  * ========================================================= */
 #include "swordwm.h"
+#include "config_parser.h"
 #include <X11/Xproto.h>
 
 /* ── Signal flag ─────────────────────────────────────────── */
@@ -198,18 +199,24 @@ static const int n_keybindings = (int)(sizeof(keybindings) / sizeof(keybindings[
 void x11_grab_keys(void) {
     XUngrabKey(wm->dpy, AnyKey, AnyModifier, wm->root);
 
-    /* Modifiers to also grab: combinations with NumLock / CapsLock */
     unsigned int mods[] = { 0, LockMask, Mod2Mask, LockMask | Mod2Mask };
 
+    /* Grab compiled-in bindings */
     for (int i = 0; i < n_keybindings; i++) {
         KeyCode kc = XKeysymToKeycode(wm->dpy, keybindings[i].keysym);
         if (!kc) continue;
-        for (int m = 0; m < 4; m++) {
-            XGrabKey(wm->dpy, kc,
-                     keybindings[i].modmask | mods[m],
-                     wm->root, True,
-                     GrabModeAsync, GrabModeAsync);
-        }
+        for (int m = 0; m < 4; m++)
+            XGrabKey(wm->dpy, kc, keybindings[i].modmask | mods[m],
+                     wm->root, True, GrabModeAsync, GrabModeAsync);
+    }
+
+    /* Grab runtime config bindings */
+    for (int i = 0; i < cfg.n_binds; i++) {
+        KeyCode kc = XKeysymToKeycode(wm->dpy, cfg.binds[i].keysym);
+        if (!kc) continue;
+        for (int m = 0; m < 4; m++)
+            XGrabKey(wm->dpy, kc, cfg.binds[i].modmask | mods[m],
+                     wm->root, True, GrabModeAsync, GrabModeAsync);
     }
 }
 
@@ -382,13 +389,19 @@ static void (*handlers[LASTEvent])(XEvent *) = {
     [EnterNotify]     = handle_enter_notify,
 };
 
-/* ── event_loop ──────────────────────────────────────────── */
+/* ── dispatch_event — called from main.c event loop ─────── */
+void dispatch_event(XEvent *ev) {
+    if (handlers[ev->type])
+        handlers[ev->type](ev);
+}
+
+/* ── event_loop — kept for compatibility / Xephyr testing ── */
 void event_loop(void) {
     XEvent ev;
-    while (wm->running && g_running) {
+    extern volatile sig_atomic_t g_running;
+    while (wm->running) {
         XNextEvent(wm->dpy, &ev);
-        if (handlers[ev.type])
-            handlers[ev.type](&ev);
+        dispatch_event(&ev);
     }
 }
 

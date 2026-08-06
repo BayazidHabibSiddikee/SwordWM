@@ -61,6 +61,7 @@ void action_move_to_workspace(const char *id);
 void action_rotate_layout(const char *arg);
 void action_gap_inc(const char *arg);
 void action_gap_dec(const char *arg);
+void action_reload_config(const char *arg);
 
 #define KEYBINDINGS \
     /* launch terminal */                                                      \
@@ -77,6 +78,8 @@ void action_gap_dec(const char *arg);
     /* increase/decrease gaps */                                               \
     { MOD_KEY,                    XK_equal,  action_gap_inc,         NULL     }, \
     { MOD_KEY,                    XK_minus,  action_gap_dec,         NULL     }, \
+    /* reload config */                                                        \
+    { MOD_KEY|ShiftMask,          XK_r,      action_reload_config,   NULL     }, \
     /* quit WM */                                                              \
     { MOD_KEY|ShiftMask,          XK_e,      action_quit,            NULL     }, \
     /* workspace switch: Mod+1..9 */                                           \

@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=SwordWM
+Comment=Hybrid tiling/floating X11 window manager
+Exec=/home/sword/SwordWM/swordwm/launch.sh
+TryExec=/home/sword/SwordWM/swordwm/swordwm
+Type=Application
+DesktopNames=swordwm

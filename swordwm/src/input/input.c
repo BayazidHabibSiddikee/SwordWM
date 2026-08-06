@@ -3,6 +3,7 @@
  * All action functions share the same signature: void(const char *)
  * ========================================================= */
 #include "swordwm.h"
+#include "config_parser.h"
 #include <stdlib.h>
 
 /* ── Keybinding table from config.h ──────────────────────── */
@@ -12,10 +13,20 @@ static const int n_keybindings =
 
 /* ── keybind_process ─────────────────────────────────────── */
 void keybind_process(XKeyEvent *e) {
-    /* Clean modifier mask — strip NumLock, CapsLock */
     unsigned int clean = e->state & ~(LockMask | Mod2Mask);
     KeySym sym = XkbKeycodeToKeysym(wm->dpy, (KeyCode)e->keycode, 0, 0);
 
+    /* Check runtime config binds first */
+    for (int i = 0; i < cfg.n_binds; i++) {
+        if (sym == cfg.binds[i].keysym &&
+            clean == cfg.binds[i].modmask &&
+            cfg.binds[i].action) {
+            cfg.binds[i].action(cfg.binds[i].arg);
+            return;
+        }
+    }
+
+    /* Fall back to compiled-in keybindings */
     for (int i = 0; i < n_keybindings; i++) {
         if (sym == keybindings[i].keysym &&
             clean == keybindings[i].modmask) {
@@ -27,11 +38,13 @@ void keybind_process(XKeyEvent *e) {
 
 /* ── action_spawn ────────────────────────────────────────── */
 void action_spawn(const char *cmd) {
-    if (!cmd) return;
+    /* If no command given, fall back to configured terminal */
+    const char *run = (cmd && cmd[0]) ? cmd : cfg.terminal;
+    if (!run || !run[0]) return;
     if (fork() == 0) {
         setsid();
-        execlp("/bin/sh", "sh", "-c", cmd, NULL);
-        fprintf(stderr, "swordwm: exec failed: %s\n", cmd);
+        execlp("/bin/sh", "sh", "-c", run, NULL);
+        fprintf(stderr, "swordwm: exec failed: %s\n", run);
         exit(1);
     }
 }
@@ -168,4 +181,10 @@ void action_switch_workspace(const char *id) {
 void action_move_to_workspace(const char *id) {
     if (!id || !wm->focused) return;
     client_move_to_workspace(wm->focused, atoi(id));
+}
+
+/* ── action_reload_config ────────────────────────────────── */
+void action_reload_config(const char *arg) {
+    (void)arg;
+    config_reload();
 }
