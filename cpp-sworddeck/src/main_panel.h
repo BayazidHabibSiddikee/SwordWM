@@ -19,12 +19,14 @@ protected:
     void resizeEvent(QResizeEvent *e) override;
     void mousePressEvent(QMouseEvent *e) override;
 
-private slots:
-    void loadGraph();
-    void editGraph();
+public slots:
     void openFM();
     void openBrowser();
     void openTerminal();
+
+private slots:
+    void loadGraph();
+    void editGraph();
 
 private:
     void drawTabBar(QPainter &p, int w, int tabBarY, int tabH);
