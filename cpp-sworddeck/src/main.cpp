@@ -9,6 +9,10 @@ int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
     app.setApplicationName("sworddeck");
 
+    /* Never quit automatically when a window closes — the WM or SIGTERM
+     * is the only valid exit path for a desktop overlay. */
+    app.setQuitOnLastWindowClosed(false);
+
     std::signal(SIGTERM, sigtermHandler);
 
     int sw = 1920, sh = 1080;

@@ -651,9 +651,9 @@ void RightPanel::openPanel(const QString &tid) {
     if (!top) return;
     MainPanel *mp = top->findChild<MainPanel *>();
     if (!mp) return;
-    if (tid == "browser")  mp->openBrowser();
-    else if (tid == "fm")  mp->openFM();
-    else if (tid == "terminal") mp->openTerminal();
+    if (tid == "browser")  mp->switchTab(Tab::Browser);
+    else if (tid == "fm")  mp->switchTab(Tab::FM);
+    else if (tid == "terminal") mp->switchTab(Tab::Terminal);
 }
 
 /* =========================================================

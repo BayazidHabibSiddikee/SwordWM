@@ -23,14 +23,13 @@ private slots:
 
 private:
     void applyX11Hints();
-    void setupX11Below(WId wid);
+    void setupX11Hints(WId wid, bool isDock);
 
     int m_sw, m_sh;
     MainPanel *m_main;
     RightPanel *m_right;
     BottomBar *m_bottom;
     SpectrumOverlay *m_spectrum;
-    QTimer m_lowerTimer;
 };
 
 constexpr int LEFT_PCT   = 28;

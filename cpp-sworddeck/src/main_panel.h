@@ -23,6 +23,7 @@ public slots:
     void openFM();
     void openBrowser();
     void openTerminal();
+    void switchTab(Tab tab);   /* switch the active tab without launching */
 
 private slots:
     void loadGraph();

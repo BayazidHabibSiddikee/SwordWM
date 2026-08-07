@@ -31,8 +31,9 @@ CyberDeck::CyberDeck(int sw, int sh, QWidget *parent)
     setGeometry(0, 0, sw, sh);
     setWindowTitle("cyberdeck");
 
-    connect(&m_lowerTimer, &QTimer::timeout, this, &CyberDeck::lowerBelow);
-    m_lowerTimer.start(1000);
+    /* No lowerBelow timer — BypassWindowManagerHint already prevents the WM
+     * from raising this window. Calling lower() every second was actively
+     * burying the panel behind everything, making it invisible. */
 
     auto *root = new QVBoxLayout(this);
     root->setContentsMargins(0, 0, 0, 0);
@@ -61,8 +62,8 @@ CyberDeck::CyberDeck(int sw, int sh, QWidget *parent)
         m_spectrum->setGeometry(0, 0, lw + cw, topH);
     }
 
-    m_bottom = new BottomBar();
-    m_bottom->setWindowFlags(Qt::FramelessWindowHint);
+    m_bottom = new BottomBar(this);
+    m_bottom->setWindowFlags(Qt::Window | Qt::FramelessWindowHint | Qt::BypassWindowManagerHint);
     m_bottom->setAttribute(Qt::WA_X11NetWmWindowTypeDock);
     m_bottom->setAttribute(Qt::WA_ShowWithoutActivating);
     m_bottom->setFixedSize(sw, BOTTOM_H);
@@ -76,15 +77,18 @@ CyberDeck::CyberDeck(int sw, int sh, QWidget *parent)
 }
 
 void CyberDeck::showBottomBar() {
-    if (m_bottom) m_bottom->show();
+    if (m_bottom) {
+        m_bottom->show();
+        /* Apply hints to bottom bar once it has a window ID */
+        QTimer::singleShot(300, this, [this]() {
+            if (m_bottom) setupX11Hints(m_bottom->winId(), /*isDock=*/true);
+        });
+    }
 }
 
 void CyberDeck::lowerBelow() {
-    // Only lowers this window. glava's DESKTOP/BELOW properties are set once at
-    // startup by cyberdesk.sh; X11 properties are durable, so re-applying them
-    // every tick meant opening a display connection and walking the whole window
-    // tree once a second to write values that never changed.
-    lower();
+    /* Intentionally empty — kept so the timer slot signature is valid.
+     * Timer is no longer started; method retained for ABI compatibility. */
 }
 
 void CyberDeck::paintEvent(QPaintEvent *) {
@@ -103,20 +107,31 @@ void CyberDeck::showEvent(QShowEvent *e) {
 }
 
 void CyberDeck::applyX11Hints() {
-    setupX11Below(winId());
+    setupX11Hints(winId(), /*isDock=*/false);
 }
 
-void CyberDeck::setupX11Below(WId wid) {
+void CyberDeck::setupX11Hints(WId wid, bool isDock) {
     Display *d = XOpenDisplay(nullptr);
     if (!d) return;
+
     Atom wmState = XInternAtom(d, "_NET_WM_STATE", False);
     Atom states[3] = {
-        XInternAtom(d, "_NET_WM_STATE_BELOW", False),
+        XInternAtom(d, "_NET_WM_STATE_BELOW",        False),
         XInternAtom(d, "_NET_WM_STATE_SKIP_TASKBAR", False),
-        XInternAtom(d, "_NET_WM_STATE_SKIP_PAGER", False)
+        XInternAtom(d, "_NET_WM_STATE_SKIP_PAGER",   False)
     };
-    XChangeProperty(d, wid, wmState, XA_ATOM, 32, PropModeReplace, (unsigned char*)states, 3);
+    XChangeProperty(d, wid, wmState, XA_ATOM, 32, PropModeReplace,
+                    (unsigned char*)states, 3);
+
+    if (isDock) {
+        /* Dock window type so panels/bars reserve strut space */
+        Atom wmType  = XInternAtom(d, "_NET_WM_WINDOW_TYPE",      False);
+        Atom dockType= XInternAtom(d, "_NET_WM_WINDOW_TYPE_DOCK", False);
+        XChangeProperty(d, wid, wmType, XA_ATOM, 32, PropModeReplace,
+                        (unsigned char*)&dockType, 1);
+    }
+
     XFlush(d);
     XCloseDisplay(d);
-    qInfo("[cyberdeck] X11 BELOW hints applied (window %lu)", wid);
+    qInfo("[cyberdeck] X11 hints applied to window %lu (dock=%d)", wid, isDock);
 }

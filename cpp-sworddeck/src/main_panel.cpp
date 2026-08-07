@@ -154,9 +154,17 @@ void MainPanel::launchForTab(Tab tab) {
     }
 }
 
+/* ── switch active tab without launching anything ────────── */
+void MainPanel::switchTab(Tab tab) {
+    if (m_activeTab != tab) {
+        m_activeTab = tab;
+        update();
+    }
+}
+
 /* ── mouse: tab clicks + Launch/Kill button ──────────────── */
 void MainPanel::mousePressEvent(QMouseEvent *e) {
-    /* Tab bar clicks */
+    /* Tab bar clicks — only switch the active tab, do NOT auto-launch */
     for (int i = 0; i < static_cast<int>(Tab::Count); i++) {
         if (m_tabRects[i].contains(e->pos())) {
             Tab t = static_cast<Tab>(i);
@@ -164,7 +172,6 @@ void MainPanel::mousePressEvent(QMouseEvent *e) {
                 m_activeTab = t;
                 update();
             }
-            launchForTab(t);
             return;
         }
     }
