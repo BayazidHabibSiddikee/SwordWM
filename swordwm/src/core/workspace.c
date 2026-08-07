@@ -21,6 +21,7 @@ void workspace_show(Workspace *ws) {
 /* ── workspace_hide — unmap all clients on a workspace ───── */
 void workspace_hide(Workspace *ws) {
     for (Client *c = ws->head; c; c = c->next) {
+        c->ignore_unmap++;   /* we are about to send an UnmapNotify */
         XUnmapWindow(wm->dpy, c->win);
         XUnmapWindow(wm->dpy, c->frame);
     }
@@ -90,6 +91,7 @@ void client_move_to_workspace(Client *c, int id) {
 
     /* Hide window if target workspace is not active */
     if (target != wm->current_ws) {
+        c->ignore_unmap++;   /* we are about to send an UnmapNotify */
         XUnmapWindow(wm->dpy, c->win);
         XUnmapWindow(wm->dpy, c->frame);
     }

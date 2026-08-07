@@ -237,11 +237,20 @@ static void handle_unmap_notify(XEvent *e) {
     Client *c = client_find(ev->window);
     if (!c) return;
 
-    /* Ignore synthetic unmaps from workspace_hide (our own XUnmapWindow calls).
-     * Only unmanage if: window is on current workspace (client-initiated unmap)
-     * or send_event=True (WM_DELETE_WINDOW response). */
-    if (c->ws == wm->current_ws || ev->send_event)
-        unmanage_window(ev->window, 0);
+    /* If we generated this UnmapNotify ourselves (workspace_hide or
+     * client_move_to_workspace), consume the counter and skip. */
+    if (c->ignore_unmap > 0) {
+        c->ignore_unmap--;
+        return;
+    }
+
+    /* Also ignore if the window is on a non-current workspace — it was
+     * hidden by workspace_hide and the counter already fired, or it's a
+     * send_event=False unmap from a hidden ws which we should not honor. */
+    if (c->ws != wm->current_ws && !ev->send_event)
+        return;
+
+    unmanage_window(ev->window, 0);
 }
 
 static void handle_destroy_notify(XEvent *e) {

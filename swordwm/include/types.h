@@ -24,10 +24,11 @@ struct Client {
     int          w, h;      /* frame size (incl. title bar) */
     int          old_x, old_y, old_w, old_h; /* saved for unfloat */
     int          min_w, min_h;  /* from WM_NORMAL_HINTS PMinSize    */
-    int          floating;  /* 1 = floating, 0 = tiled      */
-    int          focused;   /* 1 = has input focus          */
-    int          urgent;    /* 1 = demands attention        */
-    int          fullscreen;/* 1 = fullscreen               */
+    int          floating;     /* 1 = floating, 0 = tiled        */
+    int          focused;      /* 1 = has input focus            */
+    int          urgent;       /* 1 = demands attention          */
+    int          fullscreen;   /* 1 = fullscreen                 */
+    int          ignore_unmap; /* counter: skip N UnmapNotify    */
     char         title[256];/* window title (WM_NAME)       */
     struct Workspace *ws;   /* owning workspace             */
     Client      *next;      /* linked list → next           */
