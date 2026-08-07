@@ -30,6 +30,10 @@ fi
 export XDG_SESSION_TYPE=x11
 export XDG_CURRENT_DESKTOP=swordwm
 
+# Silence Qt's verbose "OpenType support missing for script N" font warnings.
+# These appear for Arabic/Hebrew scripts on Latin-only fonts and are harmless.
+export QT_LOGGING_RULES="qt.text.font.db=false"
+
 # ── Copy default config if user has none ──────────────────
 mkdir -p "$HOME/.config/swordwm"
 if [ ! -f "$HOME/.config/swordwm/config" ]; then
