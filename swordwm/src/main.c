@@ -111,7 +111,17 @@ int main(int argc, char *argv[]) {
 
     /* Signal handlers (override the ones set by x11_connect) */
     signal(SIGHUP,  handle_sighup);
-    signal(SIGCHLD, handle_sigchld);
+
+    /* SIGCHLD: reap zombies. Use SA_RESTART so that select() is NOT
+     * interrupted by child exits — without SA_RESTART every spawned
+     * process causes a spurious EINTR wakeup that spins the event loop. */
+    {
+        struct sigaction sa;
+        sa.sa_handler = handle_sigchld;
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = SA_RESTART | SA_NOCLDSTOP;
+        sigaction(SIGCHLD, &sa, NULL);
+    }
 
     fprintf(stderr, "swordwm: running — Mod+Shift+E to quit\n");
 
