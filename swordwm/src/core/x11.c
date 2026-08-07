@@ -234,8 +234,13 @@ static void handle_map_request(XEvent *e) {
 
 static void handle_unmap_notify(XEvent *e) {
     XUnmapEvent *ev = &e->xunmap;
-    /* Only care about send_event=True unmaps or client-initiated unmaps */
-    if (ev->send_event || client_find(ev->window))
+    Client *c = client_find(ev->window);
+    if (!c) return;
+
+    /* Ignore synthetic unmaps from workspace_hide (our own XUnmapWindow calls).
+     * Only unmanage if: window is on current workspace (client-initiated unmap)
+     * or send_event=True (WM_DELETE_WINDOW response). */
+    if (c->ws == wm->current_ws || ev->send_event)
         unmanage_window(ev->window, 0);
 }
 
