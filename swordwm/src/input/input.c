@@ -165,15 +165,18 @@ void action_rotate_layout(const char *arg) {
 /* ── action_gap_inc / action_gap_dec ─────────────────────── */
 void action_gap_inc(const char *arg) {
     (void)arg;
-    wm->current_ws->gap += 4;
-    arrange_workspace(wm->current_ws);
+    Workspace *ws = wm->current_ws;
+    if (ws->gap < MAX_GAP)
+        ws->gap += 4;
+    arrange_workspace(ws);
 }
 
 void action_gap_dec(const char *arg) {
     (void)arg;
-    if (wm->current_ws->gap >= 4)
-        wm->current_ws->gap -= 4;
-    arrange_workspace(wm->current_ws);
+    Workspace *ws = wm->current_ws;
+    if (ws->gap > 0)
+        ws->gap = (ws->gap >= 4) ? ws->gap - 4 : 0;
+    arrange_workspace(ws);
 }
 
 /* ── action_quit ─────────────────────────────────────────── */
