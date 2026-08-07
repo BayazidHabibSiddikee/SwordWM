@@ -129,28 +129,42 @@ void decorate_draw(Client *c) {
         if (xd) {
             XftColor fg;
             if (make_xft(fg_hex, &fg)) {
-                /* Truncate title so it doesn't overlap close button */
+                /* Truncate title so it doesn't overlap close button.
+                 * Strategy: measure the full title once, then binary-search
+                 * over byte-length to find the longest prefix that fits.
+                 * Append "..." suffix. O(log n) Xft measurements instead
+                 * of the previous O(n²) character-at-a-time loop. */
                 char title[260];
                 strncpy(title, c->title, sizeof(title) - 1);
                 title[sizeof(title) - 1] = '\0';
                 int max_w = btn_x(c) - 12;
 
                 XGlyphInfo ext;
+                int full_len = (int)strlen(title);
                 XftTextExtentsUtf8(wm->dpy, g_font,
-                                   (const FcChar8 *)title,
-                                   (int)strlen(title), &ext);
-                while (ext.width > max_w && strlen(title) > 4) {
-                    int n = (int)strlen(title);
-                    title[n-1] = '\0';
-                    /* add ellipsis on last 3 chars */
-                    if (n > 4) {
-                        title[n-2] = '.';
-                        title[n-3] = '.';
-                        title[n-4] = '.';
-                    }
+                                   (const FcChar8 *)title, full_len, &ext);
+                if (ext.width > max_w && full_len > 4) {
+                    /* Binary-search the longest byte-length that fits. */
+                    const char *ellipsis = "...";
+                    const int   elen     = 3;
+                    int lo = 0, hi = full_len - 1;
+                    XGlyphInfo eext;
                     XftTextExtentsUtf8(wm->dpy, g_font,
-                                       (const FcChar8 *)title,
-                                       (int)strlen(title), &ext);
+                                       (const FcChar8 *)ellipsis, elen, &eext);
+                    int budget = max_w - eext.width;
+                    while (lo < hi) {
+                        int mid = (lo + hi + 1) / 2;
+                        XftTextExtentsUtf8(wm->dpy, g_font,
+                                           (const FcChar8 *)title, mid, &ext);
+                        if (ext.width <= budget)
+                            lo = mid;
+                        else
+                            hi = mid - 1;
+                    }
+                    /* lo is the safe byte count; append ellipsis */
+                    if (lo > full_len - 1) lo = full_len - 1;
+                    title[lo] = '\0';
+                    strncat(title, ellipsis, sizeof(title) - (size_t)lo - 1);
                 }
 
                 int ty = (TITLE_BAR_HEIGHT + g_font->ascent - g_font->descent) / 2;
