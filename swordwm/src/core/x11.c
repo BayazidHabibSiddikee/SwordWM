@@ -106,6 +106,7 @@ static void init_workspaces(void) {
         snprintf(ws->name, sizeof(ws->name), "%d", i + 1);
         ws->layout     = DEFAULT_LAYOUT;
         ws->gap        = GAP_INNER;
+        ws->master_ratio = 50;   /* 50% master width by default */
         ws->head       = NULL;
         ws->focused    = NULL;
         ws->next       = NULL;

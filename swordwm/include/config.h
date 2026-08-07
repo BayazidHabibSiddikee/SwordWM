@@ -62,6 +62,10 @@ void action_rotate_layout(const char *arg);
 void action_gap_inc(const char *arg);
 void action_gap_dec(const char *arg);
 void action_reload_config(const char *arg);
+void action_move_stack_up(const char *arg);
+void action_move_stack_down(const char *arg);
+void action_master_grow(const char *arg);
+void action_master_shrink(const char *arg);
 
 #define KEYBINDINGS \
     /* launch terminal */                                                      \
@@ -71,10 +75,17 @@ void action_reload_config(const char *arg);
     /* focus next/prev */                                                      \
     { MOD_KEY,                    XK_j,      action_focus_next,      NULL     }, \
     { MOD_KEY,                    XK_k,      action_focus_prev,      NULL     }, \
-    /* toggle floating */                                                      \
+    /* toggle floating — Mod+F and Mod+Shift+Space both work */                \
+    { MOD_KEY,                    XK_f,      action_toggle_floating, NULL     }, \
     { MOD_KEY|ShiftMask,          XK_space,  action_toggle_floating, NULL     }, \
     /* rotate layout */                                                        \
     { MOD_KEY,                    XK_space,  action_rotate_layout,   NULL     }, \
+    /* move focused window up/down in the stack */                             \
+    { MOD_KEY|ShiftMask,          XK_j,      action_move_stack_down, NULL     }, \
+    { MOD_KEY|ShiftMask,          XK_k,      action_move_stack_up,   NULL     }, \
+    /* grow/shrink master area */                                              \
+    { MOD_KEY,                    XK_l,      action_master_grow,     NULL     }, \
+    { MOD_KEY,                    XK_h,      action_master_shrink,   NULL     }, \
     /* increase/decrease gaps */                                               \
     { MOD_KEY,                    XK_equal,  action_gap_inc,         NULL     }, \
     { MOD_KEY,                    XK_minus,  action_gap_dec,         NULL     }, \

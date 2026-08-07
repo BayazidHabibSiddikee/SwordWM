@@ -50,6 +50,7 @@ typedef struct {
     int border_width;
     int title_bar_height;
     int focus_follows_mouse;
+    int master_ratio;        /* master area width % (10–90), default 50 */
 
     /* Colours (hex strings like "#5e81f4") */
     char color_focused_border    [CONF_COLOR_LEN];

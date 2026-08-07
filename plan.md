@@ -22,9 +22,9 @@ SwordWM/
 
 ### What's done
 - [x] X11 connection, event loop via `select()` on ConnectionNumber (no CPU spin)
-- [x] Master-stack tiling layout with configurable master ratio
+- [x] Master-stack tiling layout with configurable master ratio (`master_ratio` in config, `Mod+H/L` at runtime)
 - [x] 9 workspaces — switch `Mod+1..9`, move window `Mod+Shift+1..9`
-- [x] Floating windows — toggle `Mod+F`, resize/move with mouse
+- [x] Floating windows — toggle `Mod+F` (also `Mod+Shift+Space`), resize/move with mouse
 - [x] Title bars — Xft-rendered text, coloured borders (active/inactive/urgent)
 - [x] Outer + inner gaps — configurable, inc/dec at runtime (`Mod+=` / `Mod+-`)
 - [x] Runtime config reload — `Mod+Shift+R` (no restart)
@@ -33,9 +33,14 @@ SwordWM/
       `_NET_CLIENT_LIST`, `_NET_FRAME_EXTENTS`, `_NET_WM_STRUT_PARTIAL`
 - [x] `_NET_FRAME_EXTENTS` set on every managed window
 - [x] `_NET_WM_STRUT_PARTIAL` / `_NET_WM_STRUT` read from panels/docks → updates workarea
-- [x] Config parser: all actions including `reload_config`, `quit`, `gap_inc`, `gap_dec`
-- [x] Security: `execv()` array used everywhere (no shell injection via `-c`)
+- [x] Config parser: all actions including `reload_config`, `quit`, `gap_inc`, `gap_dec`,
+      `move_stack_up`, `move_stack_down`, `master_grow`, `master_shrink`
+- [x] Security: `execv()` array used everywhere (no shell injection)
 - [x] Makefile: `.obj/` objects, `-MMD -MP` dep tracking, `debug`, `distclean`, `test-xephyr`
+- [x] Move window in stack — `Mod+Shift+J` (down) / `Mod+Shift+K` (up)
+- [x] `WM_NORMAL_HINTS` — min/max sizes read on window manage; layout clamps to min size
+- [x] `WM_TRANSIENT_FOR` — transient dialogs float automatically
+- [x] Window type detection — `_NET_WM_WINDOW_TYPE_DIALOG/SPLASH/UTILITY` float automatically
 
 ### Default keybindings
 | Key | Action |
@@ -43,10 +48,10 @@ SwordWM/
 | `Mod+Return` | Terminal (ghostty → alacritty → kitty → xterm) |
 | `Mod+Q` | Close focused window |
 | `Mod+J` / `Mod+K` | Focus next / previous |
-| `Mod+Shift+J` / `Mod+Shift+K` | Move window in stack |
-| `Mod+H` / `Mod+L` | Shrink / grow master |
-| `Mod+Space` | Rotate layout |
-| `Mod+F` | Toggle floating |
+| `Mod+Shift+J` / `Mod+Shift+K` | Move window down / up in stack |
+| `Mod+H` / `Mod+L` | Shrink / grow master area (5% steps) |
+| `Mod+F` or `Mod+Shift+Space` | Toggle floating |
+| `Mod+Space` | Rotate layout (tile → monocle → float) |
 | `Mod+Shift+R` | Reload config |
 | `Mod+Shift+Q` | Quit |
 | `Mod+1..9` | Switch workspace |

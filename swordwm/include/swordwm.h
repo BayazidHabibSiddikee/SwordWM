@@ -78,5 +78,9 @@ void action_quit(const char *arg);
 void action_switch_workspace(const char *id);
 void action_move_to_workspace(const char *id);
 void action_reload_config(const char *arg);
+void action_move_stack_up(const char *arg);
+void action_move_stack_down(const char *arg);
+void action_master_grow(const char *arg);
+void action_master_shrink(const char *arg);
 
 #endif /* SWORDWM_H */

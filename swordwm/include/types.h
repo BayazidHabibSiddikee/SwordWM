@@ -23,6 +23,7 @@ struct Client {
     int          x, y;      /* frame position               */
     int          w, h;      /* frame size (incl. title bar) */
     int          old_x, old_y, old_w, old_h; /* saved for unfloat */
+    int          min_w, min_h;  /* from WM_NORMAL_HINTS PMinSize    */
     int          floating;  /* 1 = floating, 0 = tiled      */
     int          focused;   /* 1 = has input focus          */
     int          urgent;    /* 1 = demands attention        */
@@ -42,6 +43,7 @@ struct Workspace {
     Client  *focused;       /* currently focused client     */
     Layout   layout;        /* current layout mode          */
     int      gap;           /* inner gap between windows    */
+    int      master_ratio;  /* master width % (10–90)       */
     Workspace *next;        /* linked list of workspaces    */
 };
 

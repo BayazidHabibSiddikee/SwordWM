@@ -30,6 +30,7 @@ static void set_defaults(void) {
     cfg.gap_outer            = GAP_OUTER;
     cfg.border_width         = BORDER_WIDTH;
     cfg.title_bar_height     = TITLE_BAR_HEIGHT;
+    cfg.master_ratio         = 50;
     cfg.focus_follows_mouse  = FOCUS_FOLLOWS_MOUSE;
 
     strncpy(cfg.color_focused_border,     COLOR_FOCUSED_BORDER,     CONF_COLOR_LEN-1);
@@ -147,6 +148,10 @@ static void parse_bind(const char *keys, const char *action) {
     else if (streq(act, "gap_dec"))           { fn = action_gap_dec; }
     else if (streq(act, "quit"))              { fn = action_quit; }
     else if (streq(act, "reload_config"))     { fn = action_reload_config; }
+        else if (streq(act, "move_stack_up"))     { fn = action_move_stack_up; }
+        else if (streq(act, "move_stack_down"))   { fn = action_move_stack_down; }
+        else if (streq(act, "master_grow"))       { fn = action_master_grow; }
+        else if (streq(act, "master_shrink"))     { fn = action_master_shrink; }
     else if (streq(act, "workspace")) {
         fn = action_switch_workspace;
         if (act_arg) {
@@ -219,6 +224,10 @@ static void parse_line(char *line) {
         cfg.border_width = atoi(val);
     else if (streq(key, "title_bar_height"))
         cfg.title_bar_height = atoi(val);
+    else if (streq(key, "master_ratio")) {
+        int r = atoi(val);
+        if (r >= 10 && r <= 90) cfg.master_ratio = r;
+    }
     else if (streq(key, "focus_follows_mouse"))
         cfg.focus_follows_mouse = (streq(val,"true") || streq(val,"1"));
     else if (streq(key, "color_focused_border"))
@@ -280,6 +289,7 @@ void config_apply(void) {
     /* Update gaps on all workspaces */
     for (Workspace *ws = wm->workspaces; ws; ws = ws->next) {
         ws->gap = cfg.gap_inner;
+        ws->master_ratio = cfg.master_ratio;
         /* Redraw all client title bars with new colours */
         for (Client *c = ws->head; c; c = c->next)
             decorate_draw(c);

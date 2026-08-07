@@ -68,6 +68,14 @@ Client *client_add(Window win, Workspace *ws) {
         XFree(name);
     }
 
+    /* Read WM_NORMAL_HINTS for min/max size constraints */
+    XSizeHints hints;
+    long supplied = 0;
+    if (XGetWMNormalHints(wm->dpy, win, &hints, &supplied)) {
+        c->min_w = (supplied & PMinSize) ? hints.min_width  : 0;
+        c->min_h = (supplied & PMinSize) ? hints.min_height : 0;
+    }
+
     /* Create frame window */
     XSetWindowAttributes fa;
     fa.border_pixel      = parse_color(COLOR_UNFOCUSED_BORDER);

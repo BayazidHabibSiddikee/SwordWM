@@ -199,3 +199,68 @@ void action_reload_config(const char *arg) {
     (void)arg;
     config_reload();
 }
+
+/* ── action_move_stack_up ────────────────────────────────── */
+/* Swap the focused window with the one before it in the list */
+void action_move_stack_up(const char *arg) {
+    (void)arg;
+    Workspace *ws = wm->current_ws;
+    Client *c = wm->focused;
+    if (!c || !c->prev) return;   /* already at top */
+
+    Client *prev = c->prev;
+
+    /* Detach c */
+    if (c->next) c->next->prev = prev;
+    prev->next = c->next;
+
+    /* Insert c before prev */
+    c->next = prev;
+    c->prev = prev->prev;
+    if (prev->prev) prev->prev->next = c;
+    else            ws->head = c;
+    prev->prev = c;
+
+    arrange_workspace(ws);
+}
+
+/* ── action_move_stack_down ──────────────────────────────── */
+/* Swap the focused window with the one after it in the list */
+void action_move_stack_down(const char *arg) {
+    (void)arg;
+    Workspace *ws = wm->current_ws;
+    Client *c = wm->focused;
+    if (!c || !c->next) return;   /* already at bottom */
+
+    Client *next = c->next;
+
+    /* Detach c */
+    if (c->prev) c->prev->next = next;
+    else         ws->head = next;
+    next->prev = c->prev;
+
+    /* Insert c after next */
+    c->prev = next;
+    c->next = next->next;
+    if (next->next) next->next->prev = c;
+    next->next = c;
+
+    arrange_workspace(ws);
+}
+
+/* ── action_master_grow / action_master_shrink ───────────── */
+void action_master_grow(const char *arg) {
+    (void)arg;
+    Workspace *ws = wm->current_ws;
+    if (ws->master_ratio < 90)
+        ws->master_ratio += 5;
+    arrange_workspace(ws);
+}
+
+void action_master_shrink(const char *arg) {
+    (void)arg;
+    Workspace *ws = wm->current_ws;
+    if (ws->master_ratio > 10)
+        ws->master_ratio -= 5;
+    arrange_workspace(ws);
+}

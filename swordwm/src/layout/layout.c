@@ -15,6 +15,12 @@ static int count_tiled(Workspace *ws) {
 /* ── Clamp a window dimension to a sane minimum ─────────── */
 static int clamp_dim(int v, int min) { return v < min ? min : v; }
 
+/* ── Clamp frame size to client's WM_NORMAL_HINTS min size ─ */
+static void clamp_to_hints(Client *c) {
+    if (c->min_w > 0 && c->w < c->min_w) c->w = c->min_w;
+    if (c->min_h > 0 && c->h < c->min_h) c->h = c->min_h;
+}
+
 /* ── layout_tile: master/stack ───────────────────────────── */
 static void layout_tile(Workspace *ws) {
     int n = count_tiled(ws);
@@ -31,6 +37,7 @@ static void layout_tile(Workspace *ws) {
         for (Client *c = ws->head; c; c = c->next) {
             if (c->floating || c->fullscreen) continue;
             c->x = ox; c->y = oy; c->w = ow; c->h = oh;
+            clamp_to_hints(c);
             XMoveResizeWindow(wm->dpy, c->frame,
                               c->x, c->y,
                               (unsigned)c->w, (unsigned)c->h);
@@ -43,8 +50,9 @@ static void layout_tile(Workspace *ws) {
         return;
     }
 
-    /* Master on left half, stack on right half */
-    int master_w = ow / 2 - gap / 2;
+    /* Master on left, stack on right — ratio from per-workspace setting */
+    int ratio    = (ws->master_ratio > 0) ? ws->master_ratio : 50;
+    int master_w = ow * ratio / 100 - gap / 2;
     int stack_w  = ow - master_w - gap;
     int stack_x  = ox + master_w + gap;
     int stack_n  = n - 1;   /* guaranteed > 0 since n >= 2 */
@@ -70,6 +78,7 @@ static void layout_tile(Workspace *ws) {
             c->h = each_h;
         }
 
+        clamp_to_hints(c);
         XMoveResizeWindow(wm->dpy, c->frame,
                           c->x, c->y,
                           (unsigned)c->w, (unsigned)c->h);
@@ -92,6 +101,7 @@ static void layout_monocle(Workspace *ws) {
     for (Client *c = ws->head; c; c = c->next) {
         if (c->floating || c->fullscreen) continue;
         c->x = ox; c->y = oy; c->w = ow; c->h = oh;
+        clamp_to_hints(c);
         XMoveResizeWindow(wm->dpy, c->frame,
                           c->x, c->y,
                           (unsigned)c->w, (unsigned)c->h);
