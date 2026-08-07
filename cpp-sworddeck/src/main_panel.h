@@ -52,4 +52,8 @@ private:
 
     /* Cached tab button rects for hit-testing in mousePressEvent */
     QRect m_tabRects[static_cast<int>(Tab::Count)];
+
+    /* Cached Launch/Kill button rect (content area) for hit-testing */
+    QRect m_launchBtnRect;
+    Tab   m_launchBtnTab = Tab::Graph;  /* which tab the rect belongs to */
 };

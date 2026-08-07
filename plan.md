@@ -119,8 +119,11 @@ cpp-sworddeck/src/
 
 ### Known issues / TODO
 - [ ] COLOR THEME: accent colour change not yet broadcast to all panels (visual switch only sets button checked state)
-- [ ] Browser tab: Kill button kills the tracked SwordFish process but doesn't close windows already detached from the child (SwordFish may re-parent itself). Could track by `_NET_WM_PID` instead.
+- [x] ~~Browser tab: status pill always shows NOT RUNNING~~ — fixed: tracked as QProcess child
+- [x] ~~Launch/Kill button had no click handler~~ — fixed: `m_launchBtnRect` stored in `drawLauncherTab`, hit-tested in `mousePressEvent`
+- [x] ~~FM tab used `startDetached` so status was always NOT RUNNING~~ — fixed: now uses tracked `QProcess` like Terminal
 - [ ] Apps dock: hot-reload when a new .desktop file is installed (currently polls apps.json only)
+- [ ] Kill button sends `terminate()` (SIGTERM); if app ignores it, consider `kill()` (SIGKILL) after timeout
 
 ---
 

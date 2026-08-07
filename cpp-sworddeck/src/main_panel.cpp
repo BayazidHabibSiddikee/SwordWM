@@ -134,7 +134,14 @@ void MainPanel::openTerminal() {
 void MainPanel::openFM() {
     /* swordfm is the SwordWM default; fall back gracefully */
     QString exe = findExe({"swordfm", "nautilus", "thunar", "pcmanfm"});
-    if (!exe.isEmpty()) QProcess::startDetached(exe, {});
+    if (exe.isEmpty()) return;
+    if (!m_fmProc || m_fmProc->state() == QProcess::NotRunning) {
+        delete m_fmProc;
+        m_fmProc = new QProcess(this);
+        connect(m_fmProc, &QProcess::stateChanged,
+                this, [this](QProcess::ProcessState){ update(); });
+        m_fmProc->start(exe, {});
+    }
 }
 
 /* ── launch for a tab ────────────────────────────────────── */
@@ -147,8 +154,9 @@ void MainPanel::launchForTab(Tab tab) {
     }
 }
 
-/* ── mouse: tab clicks ───────────────────────────────────── */
+/* ── mouse: tab clicks + Launch/Kill button ──────────────── */
 void MainPanel::mousePressEvent(QMouseEvent *e) {
+    /* Tab bar clicks */
     for (int i = 0; i < static_cast<int>(Tab::Count); i++) {
         if (m_tabRects[i].contains(e->pos())) {
             Tab t = static_cast<Tab>(i);
@@ -160,6 +168,30 @@ void MainPanel::mousePressEvent(QMouseEvent *e) {
             return;
         }
     }
+
+    /* Launch / Kill button click (only valid when a launcher tab is active) */
+    if (!m_launchBtnRect.isNull() && m_launchBtnRect.contains(e->pos())
+        && m_launchBtnTab == m_activeTab)
+    {
+        QProcess **proc = nullptr;
+        switch (m_activeTab) {
+        case Tab::Browser:  proc = &m_browserProc;  break;
+        case Tab::Terminal: proc = &m_terminalProc; break;
+        case Tab::FM:       proc = &m_fmProc;       break;
+        default: break;
+        }
+        if (proc) {
+            bool running = *proc && (*proc)->state() == QProcess::Running;
+            if (running) {
+                (*proc)->terminate();   /* Kill */
+            } else {
+                launchForTab(m_activeTab);  /* Launch */
+            }
+            update();
+        }
+        return;
+    }
+
     QWidget::mousePressEvent(e);
 }
 
@@ -383,6 +415,10 @@ void MainPanel::drawLauncherTab(QPainter &p, int w, int h, int contentY, Tab tab
         int bx = cx - btnW/2;
         QRect btnRect(bx, y, btnW, btnH);
 
+        /* Store for mousePressEvent hit-testing */
+        m_launchBtnRect = btnRect;
+        m_launchBtnTab  = tab;
+
         p.setPen(QPen(btnBdr, 1));
         p.setBrush(btnBg);
         p.drawRoundedRect(btnRect, 4, 4);
@@ -393,6 +429,9 @@ void MainPanel::drawLauncherTab(QPainter &p, int w, int h, int contentY, Tab tab
         p.drawText(cx - bfm.horizontalAdvance(btnLabel)/2,
                    y + (btnH + bfm.ascent() - bfm.descent())/2, btnLabel);
         y += btnH + 16;
+    } else {
+        /* No button — clear the cached rect so stale clicks are ignored */
+        m_launchBtnRect = QRect();
     }
 
     /* Hint */
