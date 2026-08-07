@@ -95,29 +95,17 @@ void MainPanel::editGraph() {
     QProcess::startDetached(script);
 }
 
-/* ── slot: open FM ───────────────────────────────────────── */
-void MainPanel::openFM() {
-    QString exe = findExe({"swordfm", "nautilus", "thunar", "pcmanfm"});
-    if (!exe.isEmpty()) QProcess::startDetached(exe, {});
-}
-
 /* ── slot: open browser ──────────────────────────────────── */
 void MainPanel::openBrowser() {
-    /* Try SwordFish first, then common browsers */
-    QString exe = findExe({"SwordFish", "zen-browser", "firefox",
-                            "chromium", "google-chrome-stable"});
-    if (exe.isEmpty()) return;
-    if (!m_browserProc || m_browserProc->state() == QProcess::NotRunning) {
-        delete m_browserProc;
-        m_browserProc = new QProcess(this);
-        connect(m_browserProc, &QProcess::stateChanged,
-                this, [this](QProcess::ProcessState){ update(); });
-        m_browserProc->start(exe, {});
-    }
+    /* Open DuckDuckGo in the system default browser.
+     * SwordWM's default — lets xdg-open pick whatever the user
+     * has set as their default browser. */
+    QProcess::startDetached("xdg-open", {"https://duckduckgo.com"});
 }
 
 /* ── slot: open terminal ─────────────────────────────────── */
 void MainPanel::openTerminal() {
+    /* ghostty is the SwordWM default; fall back gracefully */
     QString exe = findExe({"ghostty", "alacritty", "kitty", "xterm"});
     if (exe.isEmpty()) return;
     if (!m_terminalProc || m_terminalProc->state() == QProcess::NotRunning) {
@@ -127,6 +115,13 @@ void MainPanel::openTerminal() {
                 this, [this](QProcess::ProcessState){ update(); });
         m_terminalProc->start(exe, {});
     }
+}
+
+/* ── slot: open FM ───────────────────────────────────────── */
+void MainPanel::openFM() {
+    /* swordfm is the SwordWM default; fall back gracefully */
+    QString exe = findExe({"swordfm", "nautilus", "thunar", "pcmanfm"});
+    if (!exe.isEmpty()) QProcess::startDetached(exe, {});
 }
 
 /* ── launch for a tab ────────────────────────────────────── */
@@ -288,25 +283,25 @@ void MainPanel::drawLauncherTab(QPainter &p, int w, int h, int contentY, Tab tab
 
     switch (tab) {
     case Tab::Browser:
-        info.name        = "SwordFish Browser";
-        info.exe         = findExe({"SwordFish", "zen-browser", "firefox", "chromium"});
-        info.description = "Privacy-first power-user browser\nwith 20+ built-in productivity tools";
-        info.launchHint  = "Click to launch";
+        info.name        = "Browser";
+        info.exe         = "xdg-open";   /* always available */
+        info.description = "Opens DuckDuckGo in your default browser";
+        info.launchHint  = "Click to open DuckDuckGo";
         info.accentColor = CYAN;
-        proc = m_browserProc;
+        proc = nullptr;   /* browser is not a tracked child process */
         break;
     case Tab::Terminal:
-        info.name        = "Terminal";
+        info.name        = "ghostty";
         info.exe         = findExe({"ghostty", "alacritty", "kitty", "xterm"});
-        info.description = "System terminal emulator";
+        info.description = "SwordWM default terminal";
         info.launchHint  = "Click to launch  |  Mod+Return";
         info.accentColor = GREEN;
         proc = m_terminalProc;
         break;
     case Tab::FM:
-        info.name        = "File Manager";
+        info.name        = "swordfm";
         info.exe         = findExe({"swordfm", "nautilus", "thunar", "pcmanfm"});
-        info.description = "Browse and manage your files";
+        info.description = "SwordWM default file manager";
         info.launchHint  = "Click to launch";
         info.accentColor = AMBER;
         proc = m_fmProc;
