@@ -67,16 +67,19 @@ void client_move_to_workspace(Client *c, int id) {
     if (!target || target == c->ws) return;
 
     Workspace *old_ws = c->ws;
+    int was_focused = (wm->focused == c);
 
     /* Unlink from old workspace */
     if (c->prev) c->prev->next = c->next;
     else         old_ws->head  = c->next;
     if (c->next) c->next->prev = c->prev;
-    if (old_ws->focused == c) {
-        old_ws->focused = c->next ? c->next : c->prev;
-    }
 
-    /* Link into new workspace */
+    /* Update old workspace's focused pointer if it pointed at us.
+     * Pick the next client, or the one before, whichever exists. */
+    if (old_ws->focused == c)
+        old_ws->focused = c->next ? c->next : c->prev;
+
+    /* Link into new workspace at head */
     c->prev = NULL;
     c->next = target->head;
     if (target->head) target->head->prev = c;
@@ -101,12 +104,27 @@ void client_move_to_workspace(Client *c, int id) {
     if (target == wm->current_ws)
         arrange_workspace(target);
 
-    /* Focus something on the old workspace */
-    if (wm->focused == c) {
-        if (old_ws->focused)
-            client_focus(old_ws->focused);
-        else
-            client_focus(NULL);
+    /* ── Focus management ── */
+    if (was_focused) {
+        /* The moved client held focus.  Visually unfocus it (title bar). */
+        client_unfocus(c);
+
+        if (target == wm->current_ws) {
+            /* Moved to visible workspace — keep focus on the client */
+            client_focus(c);
+        } else {
+            /* Moved to hidden workspace — focus something on old_ws */
+            if (old_ws->focused)
+                client_focus(old_ws->focused);
+            else
+                client_focus(NULL);
+        }
+    } else if (target == wm->current_ws) {
+        /* Non-focused window arrived on the current workspace.
+         * Update target->focused so it can be focused on next switch,
+         * but do NOT steal focus from the currently focused window. */
+        if (!target->focused)
+            target->focused = c;
     }
 
     fprintf(stderr, "swordwm: moved window \"%s\" to workspace %d\n",
