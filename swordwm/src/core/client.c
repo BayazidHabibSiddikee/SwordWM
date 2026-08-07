@@ -24,16 +24,21 @@ static int should_float(Window win) {
     if (XGetWindowProperty(wm->dpy, win, wm->net_wm_window_type,
                            0, 1, False, XA_ATOM,
                            &actual_type, &actual_format,
-                           &n_items, &bytes_after, &prop) == Success
-        && prop) {
-        Atom type = *(Atom *)prop;
-        XFree(prop);
-        if (type == wm->net_wm_window_type_dialog  ||
-            type == wm->net_wm_window_type_splash   ||
-            type == wm->net_wm_window_type_utility  ||
-            type == wm->net_wm_window_type_desktop  ||
-            type == wm->net_wm_window_type_dock)
-            return 1;
+                           &n_items, &bytes_after, &prop) == Success) {
+        if (prop && n_items > 0) {
+            Atom type = *(Atom *)prop;
+            XFree(prop);
+            prop = NULL;
+            if (type == wm->net_wm_window_type_dialog  ||
+                type == wm->net_wm_window_type_splash   ||
+                type == wm->net_wm_window_type_utility  ||
+                type == wm->net_wm_window_type_desktop  ||
+                type == wm->net_wm_window_type_dock)
+                return 1;
+        } else if (prop) {
+            XFree(prop); /* Success but zero items — still must free */
+            prop = NULL;
+        }
     }
 
     /* Check WM_TRANSIENT_FOR — dialogs are transient */
@@ -41,6 +46,16 @@ static int should_float(Window win) {
     if (XGetTransientForHint(wm->dpy, win, &transient) && transient != None)
         return 1;
 
+    return 0;
+}
+
+/* ── Temporary error handler used while creating the frame ── */
+static int g_create_error = 0;
+
+static int client_add_error_handler(Display *dpy, XErrorEvent *e) {
+    (void)dpy;
+    (void)e;
+    g_create_error = 1;
     return 0;
 }
 
@@ -93,6 +108,12 @@ Client *client_add(Window win, Workspace *ws) {
     int fw = c->w;
     int fh = c->h + TITLE_BAR_HEIGHT;
 
+    /* Install a temporary error handler so X protocol errors from
+     * XCreateWindow and XReparentWindow set g_create_error rather
+     * than just being logged and silently ignored. */
+    g_create_error = 0;
+    XErrorHandler prev_handler = XSetErrorHandler(client_add_error_handler);
+
     c->frame = XCreateWindow(
         wm->dpy, wm->root,
         fx, fy, fw, fh,
@@ -102,8 +123,38 @@ Client *client_add(Window win, Workspace *ws) {
         &fa
     );
 
+    /* Flush so any async error from XCreateWindow arrives before we check.
+     * XCreateWindow always returns a syntactically valid ID (allocated
+     * client-side before the request is sent), so the return value itself
+     * cannot signal failure — g_create_error is the only reliable signal. */
+    XSync(wm->dpy, False);
+
+    if (g_create_error) {
+        XSetErrorHandler(prev_handler);
+        fprintf(stderr,
+                "swordwm: client_add: XCreateWindow failed for 0x%lx — "
+                "dropping window\n", win);
+        free(c);
+        return NULL;
+    }
+
     /* Reparent the client window into the frame */
+    g_create_error = 0;
     XReparentWindow(wm->dpy, win, c->frame, 0, TITLE_BAR_HEIGHT);
+
+    /* Flush again to catch BadMatch/BadWindow from XReparentWindow. */
+    XSync(wm->dpy, False);
+
+    XSetErrorHandler(prev_handler);
+
+    if (g_create_error) {
+        fprintf(stderr,
+                "swordwm: client_add: XReparentWindow failed for 0x%lx — "
+                "dropping window\n", win);
+        XDestroyWindow(wm->dpy, c->frame);
+        free(c);
+        return NULL;
+    }
 
     /* Subscribe to client events */
     XSelectInput(wm->dpy, win,
@@ -233,8 +284,9 @@ void manage_window(Window win) {
         return;
     }
 
-    /* Skip windows that are not viewable and not mapped normal */
-    if (wa.map_state == IsUnmapped) return;
+    /* Note: map_state is IsUnmapped when called from handle_map_request
+     * (the WM maps the window itself via client_add). When called from
+     * manage_existing_windows, the caller already filters for IsViewable. */
 
     Client *c = client_add(win, wm->current_ws);
     if (!c) return;
@@ -256,8 +308,13 @@ void unmanage_window(Window win, int destroyed) {
     Workspace *ws = c->ws;
 
     if (!destroyed) {
-        /* Reparent client back to root before destroying frame */
+        /* Reparent client back to root before destroying frame.
+         * Use startup error handler to suppress BadMatch/BadWindow
+         * if the window was destroyed between UnmapNotify and here. */
+        XSetErrorHandler(x11_error_handler_startup);
         XReparentWindow(wm->dpy, c->win, wm->root, c->x, c->y);
+        XSync(wm->dpy, False);
+        XSetErrorHandler(x11_error_handler);
     }
 
     fprintf(stderr, "swordwm: unmanaged window 0x%lx \"%s\"\n",

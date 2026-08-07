@@ -60,8 +60,8 @@ void action_spawn(const char *cmd) {
     }
 }
 
-/* ── action_close_window ─────────────────────────────────── */
-void action_close_window(const char *arg) {
+/* ── action_close_focused ────────────────────────────────── */
+void action_close_focused(const char *arg) {
     (void)arg;
     Client *c = wm->focused;
     if (!c) return;
@@ -185,13 +185,25 @@ void action_quit(const char *arg) {
 /* ── action_switch_workspace ─────────────────────────────── */
 void action_switch_workspace(const char *id) {
     if (!id) return;
-    workspace_switch(atoi(id));
+    int n = atoi(id);
+    if (n < 0 || n >= wm->num_workspaces) {
+        fprintf(stderr, "swordwm: workspace %d out of range [0,%d], ignored\n",
+                n, wm->num_workspaces - 1);
+        return;
+    }
+    workspace_switch(n);
 }
 
 /* ── action_move_to_workspace ────────────────────────────── */
 void action_move_to_workspace(const char *id) {
     if (!id || !wm->focused) return;
-    client_move_to_workspace(wm->focused, atoi(id));
+    int n = atoi(id);
+    if (n < 0 || n >= wm->num_workspaces) {
+        fprintf(stderr, "swordwm: workspace %d out of range [0,%d], ignored\n",
+                n, wm->num_workspaces - 1);
+        return;
+    }
+    client_move_to_workspace(wm->focused, n);
 }
 
 /* ── action_reload_config ────────────────────────────────── */

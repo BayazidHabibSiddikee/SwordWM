@@ -16,12 +16,22 @@
 /* ── Gaps (pixels) ────────────────────────────────────────── */
 #define GAP_INNER   8    /* gap between tiled windows         */
 #define GAP_OUTER   8    /* gap between windows and screen edge */
+#define MIN_GAP     0
+#define MAX_GAP     500
 
 /* ── Borders ──────────────────────────────────────────────── */
 #define BORDER_WIDTH      2
+#define MIN_BORDER        0
+#define MAX_BORDER        50
 
 /* ── Title bar ────────────────────────────────────────────── */
 #define TITLE_BAR_HEIGHT  24
+#define MIN_TITLE_BAR     1
+#define MAX_TITLE_BAR     100
+
+/* ── Master ratio (%) ─────────────────────────────────────── */
+#define MIN_MASTER_RATIO  10
+#define MAX_MASTER_RATIO  90
 
 /* ── Colors (X11 pixel values — use hex RGB) ─────────────── */
 #define COLOR_FOCUSED_BORDER    "#5e81f4"   /* blue-purple accent */
@@ -51,7 +61,7 @@
 
 /* Forward declarations for action functions — all take const char * */
 void action_spawn(const char *cmd);
-void action_close_window(const char *arg);
+void action_close_focused(const char *arg);
 void action_focus_next(const char *arg);
 void action_focus_prev(const char *arg);
 void action_toggle_floating(const char *arg);
@@ -71,7 +81,7 @@ void action_master_shrink(const char *arg);
     /* launch terminal */                                                      \
     { MOD_KEY,                    XK_Return, action_spawn,           TERMINAL }, \
     /* close focused window */                                                 \
-    { MOD_KEY,                    XK_q,      action_close_window,    NULL     }, \
+    { MOD_KEY,                    XK_q,      action_close_focused,   NULL     }, \
     /* focus next/prev */                                                      \
     { MOD_KEY,                    XK_j,      action_focus_next,      NULL     }, \
     { MOD_KEY,                    XK_k,      action_focus_prev,      NULL     }, \

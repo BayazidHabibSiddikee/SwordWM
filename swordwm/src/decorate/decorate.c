@@ -51,10 +51,12 @@ static unsigned long parse_hex(const char *hex) {
     return BlackPixel(wm->dpy, wm->screen);
 }
 
-static XftColor make_xft(const char *hex) {
-    XftColor xc;
-    XftColorAllocName(wm->dpy, g_visual, g_cmap, hex, &xc);
-    return xc;
+static int make_xft(const char *hex, XftColor *out) {
+    if (!XftColorAllocName(wm->dpy, g_visual, g_cmap, hex, out)) {
+        fprintf(stderr, "swordwm: decorate: XftColorAllocName failed for '%s'\n", hex);
+        return 0;
+    }
+    return 1;
 }
 
 /* ── Close button geometry ───────────────────────────────── */
@@ -73,8 +75,19 @@ void decorate_init(void) {
 
     g_font = XftFontOpenName(wm->dpy, wm->screen,
                              "JetBrains Mono:size=9:weight=medium");
-    if (!g_font)
+    if (!g_font) {
+        fprintf(stderr, "swordwm: decorate: JetBrains Mono not found, "
+                        "falling back to monospace\n");
         g_font = XftFontOpenName(wm->dpy, wm->screen, "monospace:size=9");
+    }
+    if (!g_font) {
+        fprintf(stderr, "swordwm: decorate: monospace not found, "
+                        "falling back to fixed\n");
+        g_font = XftFontOpenName(wm->dpy, wm->screen, "fixed");
+    }
+    if (!g_font)
+        fprintf(stderr, "swordwm: decorate: no usable font found — "
+                        "title bar text will be skipped\n");
 
     memset(&g_drag, 0, sizeof(g_drag));
 }
@@ -114,39 +127,40 @@ void decorate_draw(Client *c) {
     if (g_font && c->title[0]) {
         XftDraw *xd = XftDrawCreate(wm->dpy, c->frame, g_visual, g_cmap);
         if (xd) {
-            XftColor fg = make_xft(fg_hex);
+            XftColor fg;
+            if (make_xft(fg_hex, &fg)) {
+                /* Truncate title so it doesn't overlap close button */
+                char title[260];
+                strncpy(title, c->title, sizeof(title) - 1);
+                title[sizeof(title) - 1] = '\0';
+                int max_w = btn_x(c) - 12;
 
-            /* Truncate title so it doesn't overlap close button */
-            char title[260];
-            strncpy(title, c->title, sizeof(title) - 1);
-            title[sizeof(title) - 1] = '\0';
-            int max_w = btn_x(c) - 12;
-
-            XGlyphInfo ext;
-            XftTextExtentsUtf8(wm->dpy, g_font,
-                               (const FcChar8 *)title,
-                               (int)strlen(title), &ext);
-            while (ext.width > max_w && strlen(title) > 4) {
-                int n = (int)strlen(title);
-                title[n-1] = '\0';
-                /* add ellipsis on last 3 chars */
-                if (n > 4) {
-                    title[n-2] = '.';
-                    title[n-3] = '.';
-                    title[n-4] = '.';
-                }
+                XGlyphInfo ext;
                 XftTextExtentsUtf8(wm->dpy, g_font,
                                    (const FcChar8 *)title,
                                    (int)strlen(title), &ext);
+                while (ext.width > max_w && strlen(title) > 4) {
+                    int n = (int)strlen(title);
+                    title[n-1] = '\0';
+                    /* add ellipsis on last 3 chars */
+                    if (n > 4) {
+                        title[n-2] = '.';
+                        title[n-3] = '.';
+                        title[n-4] = '.';
+                    }
+                    XftTextExtentsUtf8(wm->dpy, g_font,
+                                       (const FcChar8 *)title,
+                                       (int)strlen(title), &ext);
+                }
+
+                int ty = (TITLE_BAR_HEIGHT + g_font->ascent - g_font->descent) / 2;
+                XftDrawStringUtf8(xd, &fg, g_font,
+                                  8, ty,
+                                  (const FcChar8 *)title,
+                                  (int)strlen(title));
+
+                XftColorFree(wm->dpy, g_visual, g_cmap, &fg);
             }
-
-            int ty = (TITLE_BAR_HEIGHT + g_font->ascent - g_font->descent) / 2;
-            XftDrawStringUtf8(xd, &fg, g_font,
-                              8, ty,
-                              (const FcChar8 *)title,
-                              (int)strlen(title));
-
-            XftColorFree(wm->dpy, g_visual, g_cmap, &fg);
             XftDrawDestroy(xd);
         }
     }

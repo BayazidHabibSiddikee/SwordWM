@@ -139,7 +139,7 @@ static void parse_bind(const char *keys, const char *action) {
         snprintf(arg_storage[cfg.n_binds], 256, "%s",
                  act_arg ? act_arg : cfg.terminal);
         arg = arg_storage[cfg.n_binds];
-    } else if (streq(act, "close"))           { fn = action_close_window; }
+    } else if (streq(act, "close"))           { fn = action_close_focused; }
     else if (streq(act, "focus_next"))        { fn = action_focus_next; }
     else if (streq(act, "focus_prev"))        { fn = action_focus_prev; }
     else if (streq(act, "toggle_floating"))   { fn = action_toggle_floating; }
@@ -216,17 +216,30 @@ static void parse_line(char *line) {
         strncpy(cfg.terminal, val, sizeof(cfg.terminal)-1);
     else if (streq(key, "mod"))
         cfg.mod = parse_mod(val);
-    else if (streq(key, "gap_inner"))
-        cfg.gap_inner = atoi(val);
-    else if (streq(key, "gap_outer"))
-        cfg.gap_outer = atoi(val);
-    else if (streq(key, "border_width"))
-        cfg.border_width = atoi(val);
-    else if (streq(key, "title_bar_height"))
-        cfg.title_bar_height = atoi(val);
+    else if (streq(key, "gap_inner")) {
+        int v = atoi(val);
+        if (v >= MIN_GAP && v <= MAX_GAP) cfg.gap_inner = v;
+        else fprintf(stderr, "swordwm: config: gap_inner %d out of range [%d,%d], ignored\n", v, MIN_GAP, MAX_GAP);
+    }
+    else if (streq(key, "gap_outer")) {
+        int v = atoi(val);
+        if (v >= MIN_GAP && v <= MAX_GAP) cfg.gap_outer = v;
+        else fprintf(stderr, "swordwm: config: gap_outer %d out of range [%d,%d], ignored\n", v, MIN_GAP, MAX_GAP);
+    }
+    else if (streq(key, "border_width")) {
+        int v = atoi(val);
+        if (v >= MIN_BORDER && v <= MAX_BORDER) cfg.border_width = v;
+        else fprintf(stderr, "swordwm: config: border_width %d out of range [%d,%d], ignored\n", v, MIN_BORDER, MAX_BORDER);
+    }
+    else if (streq(key, "title_bar_height")) {
+        int v = atoi(val);
+        if (v >= MIN_TITLE_BAR && v <= MAX_TITLE_BAR) cfg.title_bar_height = v;
+        else fprintf(stderr, "swordwm: config: title_bar_height %d out of range [%d,%d], ignored\n", v, MIN_TITLE_BAR, MAX_TITLE_BAR);
+    }
     else if (streq(key, "master_ratio")) {
         int r = atoi(val);
-        if (r >= 10 && r <= 90) cfg.master_ratio = r;
+        if (r >= MIN_MASTER_RATIO && r <= MAX_MASTER_RATIO) cfg.master_ratio = r;
+        else fprintf(stderr, "swordwm: config: master_ratio %d out of range [%d,%d], ignored\n", r, MIN_MASTER_RATIO, MAX_MASTER_RATIO);
     }
     else if (streq(key, "focus_follows_mouse"))
         cfg.focus_follows_mouse = (streq(val,"true") || streq(val,"1"));

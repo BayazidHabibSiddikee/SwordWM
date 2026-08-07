@@ -336,14 +336,11 @@ static void handle_button_press(XEvent *e) {
 }
 
 static void handle_enter_notify(XEvent *e) {
-#if FOCUS_FOLLOWS_MOUSE
+    if (!cfg.focus_follows_mouse) return;
     XCrossingEvent *ev = &e->xcrossing;
     if (ev->mode != NotifyNormal || ev->detail == NotifyInferior) return;
     Client *c = client_find(ev->window);
     if (c) client_focus(c);
-#else
-    (void)e;
-#endif
 }
 
 static void handle_expose(XEvent *e) {
