@@ -97,10 +97,23 @@ void MainPanel::editGraph() {
 
 /* ── slot: open browser ──────────────────────────────────── */
 void MainPanel::openBrowser() {
-    /* Open DuckDuckGo in the system default browser.
-     * SwordWM's default — lets xdg-open pick whatever the user
-     * has set as their default browser. */
-    QProcess::startDetached("xdg-open", {"https://duckduckgo.com"});
+    /* Launch SwordFish with DuckDuckGo as the start page.
+     * SwordFish lives at ~/.local/bin/SwordFish (installed location).
+     * Falls back to other browsers if SwordFish is not installed. */
+    QString exe = findExe({"SwordFish", "zen-browser", "firefox",
+                            "chromium", "google-chrome-stable"});
+    if (exe.isEmpty()) return;
+
+    /* If already running, just bring it to focus (don't spawn a second) */
+    if (m_browserProc && m_browserProc->state() == QProcess::Running)
+        return;
+
+    delete m_browserProc;
+    m_browserProc = new QProcess(this);
+    connect(m_browserProc, &QProcess::stateChanged,
+            this, [this](QProcess::ProcessState){ update(); });
+    /* Pass DuckDuckGo as the start URL */
+    m_browserProc->start(exe, {"https://duckduckgo.com"});
 }
 
 /* ── slot: open terminal ─────────────────────────────────── */
@@ -283,12 +296,13 @@ void MainPanel::drawLauncherTab(QPainter &p, int w, int h, int contentY, Tab tab
 
     switch (tab) {
     case Tab::Browser:
-        info.name        = "Browser";
-        info.exe         = "xdg-open";   /* always available */
-        info.description = "Opens DuckDuckGo in your default browser";
-        info.launchHint  = "Click to open DuckDuckGo";
+        info.name        = "SwordFish";
+        info.exe         = findExe({"SwordFish", "zen-browser", "firefox",
+                                    "chromium", "google-chrome-stable"});
+        info.description = "Opens SwordFish with DuckDuckGo";
+        info.launchHint  = "Click to launch";
         info.accentColor = CYAN;
-        proc = nullptr;   /* browser is not a tracked child process */
+        proc = m_browserProc;
         break;
     case Tab::Terminal:
         info.name        = "ghostty";

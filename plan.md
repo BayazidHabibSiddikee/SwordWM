@@ -78,7 +78,7 @@ Three panels: Left+Center (72%) | Right (28%) | Bottom bar.
 | Tab | What it does |
 |---|---|
 | 📊 Graph | Renders `~/.config/animated-wallpaper/graph.png`; bottom bar: node/edge count, uptime, kernel; Edit Graph + SwordFM buttons |
-| 🌐 Browser | Opens **DuckDuckGo** (`xdg-open https://duckduckgo.com`) in the system default browser |
+| 🌐 Browser | Launches **SwordFish** with `https://duckduckgo.com` as start URL (fallback: zen-browser → firefox → chromium); shows RUNNING / NOT RUNNING + PID + Launch/Kill button |
 | >_ Terminal | Launches **ghostty** (fallback: alacritty → kitty → xterm); shows RUNNING/NOT RUNNING + PID + Launch/Kill |
 | 📁 Files | Launches **swordfm** (fallback: nautilus → thunar → pcmanfm); same status UI |
 
@@ -119,7 +119,7 @@ cpp-sworddeck/src/
 
 ### Known issues / TODO
 - [ ] COLOR THEME: accent colour change not yet broadcast to all panels (visual switch only sets button checked state)
-- [ ] Browser tab: status pill always shows NOT RUNNING (correct — we use xdg-open, don't own the process). Could track by window name via EWMH instead.
+- [ ] Browser tab: Kill button kills the tracked SwordFish process but doesn't close windows already detached from the child (SwordFish may re-parent itself). Could track by `_NET_WM_PID` instead.
 - [ ] Apps dock: hot-reload when a new .desktop file is installed (currently polls apps.json only)
 
 ---
@@ -264,7 +264,7 @@ autostart = sworddeck &
 
 ## Design decisions to remember
 
-- **Browser tab opens DuckDuckGo** via `xdg-open` — not a tracked process. The user's default browser handles it.
+- **Browser tab launches SwordFish** with `https://duckduckgo.com` as the start URL, tracked as a child process (RUNNING/NOT RUNNING status pill). Falls back to zen-browser → firefox → chromium if SwordFish is not installed. SwordFish binary is at `~/.local/bin/SwordFish`.
 - **Terminal default is ghostty** — it's the SwordWM default terminal, not generic.
 - **Files default is swordfm** — the project's own file manager, not nautilus.
 - **App launcher in right panel** scans all 5 XDG `.desktop` dirs including Flatpak exports. Pinned apps (apps.json) always appear first.
