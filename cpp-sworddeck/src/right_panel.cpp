@@ -213,8 +213,8 @@ static double cpuPercent() {
     return dt ? 100.0 * (1.0 - (double)di / dt) : 0;
 }
 
-static void memInfo(int &used, int &total) {
-    used = 0; total = 1;
+static void memInfo(double &usedGB, double &totalGB) {
+    usedGB = 0; totalGB = 1;
     QFile f("/proc/meminfo");
     if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) return;
     QMap<QString, long> info;
@@ -224,8 +224,10 @@ static void memInfo(int &used, int &total) {
         if (kv.size() == 2)
             info[kv[0].trimmed()] = kv[1].trimmed().split(' ')[0].toLong();
     }
-    total = (int)(info["MemTotal"]     / 1024);
-    used  = (int)((info["MemTotal"] - info["MemAvailable"]) / 1024);
+    /* MemAvailable is what the kernel considers truly free (incl. reclaimable
+     * cache/buffers). Used = Total - Available gives the real working-set. */
+    totalGB = info["MemTotal"]                            / 1024.0 / 1024.0;
+    usedGB  = (info["MemTotal"] - info["MemAvailable"]) / 1024.0 / 1024.0;
 }
 
 static void diskInfo(int &usedGB, int &totalGB, int &pct) {
@@ -864,14 +866,15 @@ void RightPanel::paintEvent(QPaintEvent *) {
     y += 28;
 
     /* RAM */
-    double memPct = 100.0 * m_memUsed / qMax(1, m_memTotal);
+    double memPct = 100.0 * m_memUsed / qMax(0.001, m_memTotal);
     QColor memC   = valColor(memPct);
     p.setFont(smb); p.setPen(WHITE);
     p.drawText(x, y + 12, "RAM");
     p.setFont(sm); p.setPen(memC);
     p.drawText(x + 35, y + 12,
-               QString("%1M / %2M  %3%")
-               .arg(m_memUsed).arg(m_memTotal)
+               QString("%1G / %2G  %3%")
+               .arg(m_memUsed, 0, 'f', 1)
+               .arg(m_memTotal, 0, 'f', 1)
                .arg(memPct, 0, 'f', 0));
     drawBar(p, x, y + 15, bw, 7, memPct, memC);
     y += 30;

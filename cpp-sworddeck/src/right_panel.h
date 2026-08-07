@@ -49,8 +49,8 @@ private:
 
     PipesLayer m_pipes;
     double m_cpu    = 0;
-    int m_memUsed   = 0;
-    int m_memTotal  = 1;
+    double m_memUsed  = 0;
+    double m_memTotal = 1;
     int m_temp      = 0;
     bool m_hasTemp  = false;
     QList<QPair<QString, QPair<double,double>>> m_procs;
