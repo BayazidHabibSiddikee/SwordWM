@@ -40,6 +40,10 @@ void ewmh_init(void) {
     XChangeProperty(wm->dpy, wm->root, wm->net_client_list,
                     XA_WINDOW, 32, PropModeReplace, NULL, 0);
 
+    /* Empty _NET_CLIENT_LIST_STACKING to start */
+    XChangeProperty(wm->dpy, wm->root, wm->net_client_list_stacking,
+                    XA_WINDOW, 32, PropModeReplace, NULL, 0);
+
     /* Empty _NET_ACTIVE_WINDOW */
     Window none = None;
     XChangeProperty(wm->dpy, wm->root, wm->net_active_window,
@@ -60,6 +64,17 @@ void ewmh_update_client_list(void) {
     XChangeProperty(wm->dpy, wm->root, wm->net_client_list,
                     XA_WINDOW, 32, PropModeReplace,
                     (unsigned char *)wins, n);
+
+    /* Also update stacking order - use global client array order */
+    Window stacking_wins[512];
+    int stacking_n = 0;
+    for (int i = 0; i < wm->num_clients && stacking_n < 512; i++) {
+        stacking_wins[stacking_n++] = wm->all_clients[i]->win;
+    }
+    
+    XChangeProperty(wm->dpy, wm->root, wm->net_client_list_stacking,
+                    XA_WINDOW, 32, PropModeReplace,
+                    (unsigned char *)stacking_wins, stacking_n);
 }
 
 /* ── ewmh_update_active_window ───────────────────────────── */
@@ -231,7 +246,8 @@ void ewmh_set_pid(Client *c) {
         XFree(prop);
         return;
     }
-    /* Client didn't set it — we can't know its PID, so skip */
+    /* Client didn't set _NET_WM_PID.  We cannot determine the client's PID
+     * from X11 alone, so skip — setting the WM's own PID would be wrong. */
 }
 
 /* ── ewmh_set_frame_extents ──────────────────────────────── */

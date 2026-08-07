@@ -13,6 +13,8 @@ Workspace *workspace_get(int id) {
 /* ── workspace_show — map all clients on a workspace ─────── */
 void workspace_show(Workspace *ws) {
     for (Client *c = ws->head; c; c = c->next) {
+        /* DO NOT increment ignore_unmap here — mapping a window does NOT
+         * generate UnmapNotify, so there is nothing to suppress. */
         XMapWindow(wm->dpy, c->frame);
         XMapWindow(wm->dpy, c->win);
     }
@@ -21,7 +23,12 @@ void workspace_show(Workspace *ws) {
 /* ── workspace_hide — unmap all clients on a workspace ───── */
 void workspace_hide(Workspace *ws) {
     for (Client *c = ws->head; c; c = c->next) {
-        c->ignore_unmap++;   /* we are about to send an UnmapNotify */
+        /* Each XUnmapWindow call generates one UnmapNotify event:
+         *   - XUnmapWindow(c->win)   → UnmapNotify for c->win
+         *   - XUnmapWindow(c->frame) → UnmapNotify for c->frame
+         * Both windows are tracked by client_find(), so both events
+         * would trigger unmanage_window.  Increment by 2 to suppress both. */
+        c->ignore_unmap += 2;
         XUnmapWindow(wm->dpy, c->win);
         XUnmapWindow(wm->dpy, c->frame);
     }
@@ -94,7 +101,8 @@ void client_move_to_workspace(Client *c, int id) {
 
     /* Hide window if target workspace is not active */
     if (target != wm->current_ws) {
-        c->ignore_unmap++;   /* we are about to send an UnmapNotify */
+        /* Two UnmapNotify events will fire (one for c->win, one for c->frame) */
+        c->ignore_unmap += 2;
         XUnmapWindow(wm->dpy, c->win);
         XUnmapWindow(wm->dpy, c->frame);
     }

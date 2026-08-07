@@ -1,0 +1,136 @@
+# swordwm — From "Compiles" to Actual Daily-Driver WM
+
+This is about `swordwm/` only (the C/Xlib window manager). Nothing here
+touches `cpp-sworddeck`.
+
+## Step 0 — Find out what's actually true right now
+
+Your docs say "done." Don't trust that — verify it in this exact order,
+because each step exposes different classes of bugs:
+
+1. **Does it even build clean?**
+   ```bash
+   cd swordwm && make clean && make
+   ```
+2. **Does it survive Xephyr** (nested, safe, can't break your real session)?
+   ```bash
+   make test-xephyr
+   # inside: open a few xterms, tile, float, switch workspaces, quit cleanly
+   ```
+3. **Does it survive a real session** — this is the step most half-finished
+   WMs never reach. Xephyr hides a lot of bugs (real GPU drivers, real
+   monitors, real compositors, real apps like browsers behave differently).
+
+Answer these honestly before touching code. If you're stuck at step 2, the
+plan below is your roadmap. If you're already comfortably at step 3 daily,
+you're closer to done than the "known issues" list implies and just need
+Phase 3.
+
+---
+
+## Phase 1 — Prove it doesn't crash under real use (do this before adding features)
+
+A WM's #1 job is: **never crash while you have unsaved work open in it.**
+This matters more than any missing feature.
+
+- [ ] Run it as your *actual* session for a few hours with real apps: a
+      browser, a terminal, a PDF reader, something that spawns dialogs
+      (file pickers, save-as prompts)
+- [ ] Specifically stress the parts that are hardest to get right in a
+      hand-rolled WM:
+  - Windows that unmap/remap themselves (browsers do this on fullscreen)
+  - Windows that resize themselves without you touching them (video players,
+    some Electron apps)
+  - Transient/dialog windows (`WM_TRANSIENT_FOR`) — do they float correctly
+    and stay attached to their parent?
+  - Rapid open/close (spam-opening terminals) — any use-after-free? Run under
+    `make debug` + `valgrind --leak-check=full` for this specifically
+- [ ] Confirm `Mod+Shift+R` (reload) doesn't leak keygrabs or duplicate
+      keybindings after repeated reloads
+- [ ] Confirm clean shutdown — `Mod+Shift+E` or logout doesn't leave zombie
+      child processes or an X server in a bad state
+
+**If anything crashes here, stop and fix it before Phase 2.** A WM that
+occasionally segfaults is not a daily driver no matter how many features
+it has — you'll be back at your DM login screen mid-work.
+
+---
+
+## Phase 2 — Close the gaps your own docs already flagged
+
+From `plan.md`'s known issues, in the order they'll actually bite you:
+
+1. **Multi-monitor (Xinerama/RandR)** — biggest one. If you have >1 monitor,
+   this isn't optional; without it, windows will only ever appear on one
+   screen or get positioned wrong. If you're single-monitor, this can wait.
+2. **Fullscreen hint passthrough (`_NET_WM_STATE_FULLSCREEN`)** — without
+   this, video players / browsers-in-fullscreen won't cover the whole
+   screen correctly, or won't un-fullscreen cleanly. You'll hit this fast.
+3. **Per-workspace layout memory** — quality-of-life, not a blocker. Fine to
+   defer.
+
+Also worth checking even though not listed:
+- [ ] What happens when an external monitor is plugged/unplugged live
+      (if RandR isn't handled, expect stale geometry)
+- [ ] What happens when a window requests a specific size (`WM_NORMAL_HINTS`
+      min/max size, e.g. a calculator or a fixed-size dialog) — does tiling
+      respect it or forcibly stretch it?
+
+---
+
+## Phase 3 — Daily-driver ergonomics (the stuff you don't notice until it's missing)
+
+These aren't in your blueprint's 12 steps but every daily-use tiling WM ends
+up needing them:
+
+- [ ] **Scratchpad** — a toggleable hidden terminal/notes window (huge
+      quality-of-life item, already on your roadmap)
+- [ ] **Mouse resize from edges/corners** — currently only move is likely
+      wired; resize-by-drag matters a lot in daily use
+- [ ] **Lock screen integration** — does `Mod+...` or your autostart spawn
+      something like `xss-lock`/`slock`? Not swordwm's job to implement, but
+      confirm it's wired in `autostart =` and doesn't get eaten by a keygrab
+- [ ] **Screenshot binding** — you referenced `PrtSc` in the sworddeck HUD;
+      confirm swordwm doesn't grab that key and block it
+- [ ] **Crash recovery** — if swordwm itself dies, do your windows survive
+      (reparented back to root) or do they vanish? Test this explicitly:
+      `kill -9` the swordwm process while apps are open.
+
+---
+
+## Phase 4 — Only after Phases 1–3 are solid
+
+- [ ] IPC socket for scripting (`swordwm-msg`-style, i3-like) — nice for
+      power users, not required for daily use
+- [ ] Man page, `docs/keybinds.md`, `docs/architecture.md`
+- [ ] `make install` polish, packaging
+
+---
+
+## The actual test for "is this a real window manager yet"
+
+Not "does it compile" — ask instead:
+
+> Can I set this as my login session, use it as my only WM for a full work
+> day with a browser, terminal, and file manager open, plug in an external
+> monitor if I have one, and not once need to Ctrl+Alt+F2 to a TTY to kill
+> something?
+
+If yes → you're done, ship it, the "known issues" are backlog polish.
+If no → whatever made you say no is Phase 1, regardless of what the docs list.
+
+---
+
+## What to tell your coding AI, verbatim
+
+Same scoping principle as sworddeck — don't say "finish the window manager."
+Say:
+
+> Work only in `swordwm/src/`. I ran it as my real session for a day.
+> It crashed / misbehaved when [specific repro: "a video went fullscreen
+> in firefox and the window manager didn't resize it to cover the screen"].
+> Fix that specific case in the tiling/fullscreen handling, don't touch
+> the keybinding or config code.
+
+Concrete repro steps > "add fullscreen support," because the AI will
+otherwise guess at a spec instead of fixing the actual bug you hit.

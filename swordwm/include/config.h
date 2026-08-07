@@ -29,6 +29,9 @@
 #define MIN_TITLE_BAR     1
 #define MAX_TITLE_BAR     100
 
+/* ── Font ──────────────────────────────────────────────────── */
+#define DEFAULT_FONT      "JetBrains Mono:size=9:weight=medium"
+
 /* ── Master ratio (%) ─────────────────────────────────────── */
 #define MIN_MASTER_RATIO  10
 #define MAX_MASTER_RATIO  90

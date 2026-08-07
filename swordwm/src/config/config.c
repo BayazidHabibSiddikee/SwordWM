@@ -16,9 +16,16 @@ SwordConfig cfg;
 /* ── Path to config file ─────────────────────────────────── */
 static const char *config_path(void) {
     static char path[512];
+    const char *xdg_config = getenv("XDG_CONFIG_HOME");
     const char *home = getenv("HOME");
-    if (!home) home = "/root";
-    snprintf(path, sizeof(path), "%s/.config/swordwm/config", home);
+    
+    if (xdg_config && xdg_config[0]) {
+        snprintf(path, sizeof(path), "%s/swordwm/config", xdg_config);
+    } else if (home) {
+        snprintf(path, sizeof(path), "%s/.config/swordwm/config", home);
+    } else {
+        snprintf(path, sizeof(path), "/root/.config/swordwm/config");
+    }
     return path;
 }
 
@@ -32,6 +39,7 @@ static void set_defaults(void) {
     cfg.title_bar_height     = TITLE_BAR_HEIGHT;
     cfg.master_ratio         = 50;
     cfg.focus_follows_mouse  = FOCUS_FOLLOWS_MOUSE;
+    strncpy(cfg.font,                  DEFAULT_FONT,                sizeof(cfg.font)-1);
 
     strncpy(cfg.color_focused_border,     COLOR_FOCUSED_BORDER,     CONF_COLOR_LEN-1);
     strncpy(cfg.color_unfocused_border,   COLOR_UNFOCUSED_BORDER,   CONF_COLOR_LEN-1);
@@ -183,11 +191,52 @@ static void parse_bind(const char *keys, const char *action) {
 
 /* ── Parse a single key=value line ──────────────────────── */
 static void parse_line(char *line) {
-    /* Strip comment */
-    char *hash = strchr(line, '#');
-    if (hash) *hash = '\0';
-
+    /* Strip inline comment — carefully so color hex values like #5e81f4
+     * are not truncated.
+     *
+     * Rules:
+     *  1. Any '#' on the KEY side (before '=') terminates the line — pure comment.
+     *  2. On the VALUE side: if the value STARTS with '#' (hex color), only
+     *     strip a '#' that is preceded by whitespace (a trailing comment).
+     *     e.g.  "color = #5e81f4  # nice blue"  → value = "#5e81f4"
+     *           "color = #5e81f4"                → value = "#5e81f4"
+     *  3. If the value does NOT start with '#', strip the first '#' found
+     *     (inline comment).
+     *     e.g.  "gap_inner = 8  # pixels"  → value = "8"
+     */
     char *eq = strchr(line, '=');
+    if (eq) {
+        /* Step 1: strip any '#' comment in the key portion */
+        for (char *p = line; p < eq; p++) {
+            if (*p == '#') { *p = '\0'; break; }
+        }
+
+        /* Step 2: strip trailing comment from value */
+        char *val_start = eq + 1;
+        while (*val_start && isspace((unsigned char)*val_start)) val_start++;
+
+        if (*val_start == '#') {
+            /* Hex color value: skip the leading '#' + 6 hex digits (7 chars total),
+             * then look for a whitespace-preceded '#' which is a trailing comment. */
+            char *p = val_start + 1; /* skip the '#' of the color */
+            while (*p && !isspace((unsigned char)*p)) p++; /* skip hex digits */
+            /* p now points at whitespace or end-of-string */
+            while (*p) {
+                if (*p == '#') { *p = '\0'; break; } /* trailing comment */
+                p++;
+            }
+        } else {
+            /* Non-color value: strip from first '#' */
+            char *vhash = strchr(val_start, '#');
+            if (vhash) *vhash = '\0';
+        }
+    } else {
+        /* No '=': whole line is a comment if it starts with '#', or unknown */
+        char *hash = strchr(line, '#');
+        if (hash) *hash = '\0';
+    }
+
+    eq = strchr(line, '=');
     if (!eq) return;
 
     *eq = '\0';
@@ -214,6 +263,8 @@ static void parse_line(char *line) {
     /* Scalar settings */
     if (streq(key, "terminal"))
         strncpy(cfg.terminal, val, sizeof(cfg.terminal)-1);
+    else if (streq(key, "font"))
+        strncpy(cfg.font, val, sizeof(cfg.font)-1);
     else if (streq(key, "mod"))
         cfg.mod = parse_mod(val);
     else if (streq(key, "gap_inner")) {

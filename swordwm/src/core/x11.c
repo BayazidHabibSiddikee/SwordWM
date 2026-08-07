@@ -6,11 +6,13 @@
 #include <X11/Xproto.h>
 
 /* ── Signal flag ─────────────────────────────────────────── */
-static volatile int g_running = 1;
+/* Note: g_running is unused — wm->running is the authoritative
+ * event-loop flag read by main.c.  handle_signal sets wm->running
+ * directly (safe: volatile int, single writer from signal context). */
 
 static void handle_signal(int sig) {
     (void)sig;
-    g_running = 0;
+    if (wm) wm->running = 0;
 }
 
 /* ── X11 error handlers ──────────────────────────────────── */
@@ -44,6 +46,7 @@ static void intern_atoms(void) {
     INTERN(net_wm_name,               "_NET_WM_NAME");
     INTERN(net_active_window,         "_NET_ACTIVE_WINDOW");
     INTERN(net_client_list,           "_NET_CLIENT_LIST");
+    INTERN(net_client_list_stacking,  "_NET_CLIENT_LIST_STACKING");
     INTERN(net_current_desktop,       "_NET_CURRENT_DESKTOP");
     INTERN(net_wm_desktop,            "_NET_WM_DESKTOP");
     INTERN(net_wm_state,              "_NET_WM_STATE");
@@ -54,6 +57,7 @@ static void intern_atoms(void) {
     INTERN(net_wm_window_type_utility,"_NET_WM_WINDOW_TYPE_UTILITY");
     INTERN(net_wm_window_type_desktop,"_NET_WM_WINDOW_TYPE_DESKTOP");
     INTERN(net_wm_window_type_dock,   "_NET_WM_WINDOW_TYPE_DOCK");
+    INTERN(net_wm_moveresize,         "_NET_WM_MOVERESIZE");
 #undef INTERN
 }
 
@@ -64,6 +68,7 @@ static void set_ewmh_support(void) {
         wm->net_wm_name,
         wm->net_active_window,
         wm->net_client_list,
+        wm->net_client_list_stacking,
         wm->net_current_desktop,
         wm->net_wm_desktop,
         wm->net_wm_state,
@@ -74,6 +79,7 @@ static void set_ewmh_support(void) {
         wm->net_wm_window_type_utility,
         wm->net_wm_window_type_desktop,
         wm->net_wm_window_type_dock,
+        wm->net_wm_moveresize,
     };
     int n = (int)(sizeof(supported) / sizeof(supported[0]));
     XChangeProperty(wm->dpy, wm->root, wm->net_supported,
@@ -173,7 +179,6 @@ int x11_connect(void) {
     /* Signal handlers for clean exit */
     signal(SIGINT,  handle_signal);
     signal(SIGTERM, handle_signal);
-    signal(SIGHUP,  handle_signal);
 
     XSync(wm->dpy, False);
     return 0;
@@ -230,6 +235,8 @@ void x11_ungrab_keys(void) {
 
 static void handle_map_request(XEvent *e) {
     XMapRequestEvent *ev = &e->xmaprequest;
+    /* Check if window is already managed to prevent duplicates */
+    if (client_find(ev->window)) return;
     manage_window(ev->window);
 }
 
@@ -264,8 +271,9 @@ static void handle_configure_request(XEvent *e) {
     Client *c = client_find(ev->window);
 
     if (c && !c->floating) {
-        /* Managed tiled client: ignore position/size changes, re-arrange */
-        arrange_workspace(wm->current_ws);
+        /* Managed tiled client: ignore position/size changes, re-arrange.
+         * Must use c->ws not wm->current_ws — client may be on a hidden ws. */
+        arrange_workspace(c->ws);
         return;
     }
 
@@ -314,6 +322,22 @@ static void handle_client_message(XEvent *e) {
             } else {
                 arrange_workspace(c->ws);
             }
+        }
+    } else if (ev->message_type == wm->net_wm_moveresize) {
+        /* _NET_WM_MOVERESIZE - client requests interactive move/resize */
+        int x_root = (int)ev->data.l[0];
+        int y_root = (int)ev->data.l[1];
+        int direction = (int)ev->data.l[2];
+        /* int button = (int)ev->data.l[3]; */  /* which mouse button */
+        /* int source = (int)ev->data.l[4]; */  /* 1=app, 2=pager */
+
+        (void)x_root; (void)y_root; (void)direction;
+        
+        /* For simplicity, just toggle floating mode and focus the client
+         * A full implementation would start interactive move/resize */
+        if (!c->floating) {
+            c->floating = 1;
+            client_focus(c);
         }
     }
 }
@@ -366,6 +390,18 @@ static void handle_expose(XEvent *e) {
     if (c) decorate_draw(c);
 }
 
+static void handle_configure_notify(XEvent *e) {
+    XConfigureEvent *ev = &e->xconfigure;
+    Client *c = client_find(ev->window);
+    /* Update our geometry tracking for floating windows */
+    if (c && c->floating) {
+        c->x = ev->x;
+        c->y = ev->y;
+        c->w = ev->width;
+        c->h = ev->height;
+    }
+}
+
 static void handle_motion_notify(XEvent *e) {
     /* Compress motion events — only handle the latest one */
     while (XCheckTypedEvent(wm->dpy, MotionNotify, e))
@@ -378,7 +414,35 @@ static void handle_motion_notify(XEvent *e) {
 static void handle_button_release(XEvent *e) {
     (void)e;
     decorate_button_release();
-    XAllowEvents(wm->dpy, ReplayPointer, CurrentTime);
+    /* Do NOT call XAllowEvents here — decorate_button_release already
+     * calls XUngrabPointer.  Calling XAllowEvents after the grab is
+     * released is a no-op at best and generates BadValue at worst. */
+}
+
+static void handle_focus_in(XEvent *e) {
+    XFocusChangeEvent *ev = &e->xfocus;
+    /* Only update our internal focus state — do NOT call client_focus()
+     * here because client_focus() calls XSetInputFocus, which would
+     * generate another FocusIn, causing an infinite event loop.
+     * We use FocusIn only to sync our bookkeeping if another application
+     * (e.g. a pager) changed focus behind our back. */
+    if (ev->mode == NotifyGrab || ev->mode == NotifyUngrab) return;
+    Client *c = client_find(ev->window);
+    if (c && c != wm->focused) {
+        if (wm->focused) client_unfocus(wm->focused);
+        c->focused     = 1;
+        c->urgent      = 0;
+        c->ws->focused = c;
+        wm->focused    = c;
+        decorate_draw(c);
+        ewmh_update_active_window(c);
+    }
+}
+
+static void handle_focus_out(XEvent *e) {
+    XFocusChangeEvent *ev = &e->xfocus;
+    (void)ev; /* Currently just a placeholder - we track focus via FocusIn */
+    /* Could be used for cleanup or validation if needed */
 }
 
 /* ── Dispatch table ──────────────────────────────────────── */
@@ -387,6 +451,7 @@ static void (*handlers[LASTEvent])(XEvent *) = {
     [UnmapNotify]     = handle_unmap_notify,
     [DestroyNotify]   = handle_destroy_notify,
     [ConfigureRequest]= handle_configure_request,
+    [ConfigureNotify] = handle_configure_notify,
     [PropertyNotify]  = handle_property_notify,
     [ClientMessage]   = handle_client_message,
     [KeyPress]        = handle_key_press,
@@ -395,6 +460,8 @@ static void (*handlers[LASTEvent])(XEvent *) = {
     [MotionNotify]    = handle_motion_notify,
     [Expose]          = handle_expose,
     [EnterNotify]     = handle_enter_notify,
+    [FocusIn]         = handle_focus_in,
+    [FocusOut]        = handle_focus_out,
 };
 
 /* ── dispatch_event — called from main.c event loop ─────── */
@@ -412,6 +479,7 @@ void x11_cleanup(void) {
 
     /* Delete EWMH properties we set on root */
     XDeleteProperty(wm->dpy, wm->root, wm->net_client_list);
+    XDeleteProperty(wm->dpy, wm->root, wm->net_client_list_stacking);
     XDeleteProperty(wm->dpy, wm->root, wm->net_active_window);
 
     XSync(wm->dpy, False);

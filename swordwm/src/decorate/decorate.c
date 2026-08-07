@@ -14,6 +14,7 @@
  * ========================================================= */
 
 #include "swordwm.h"
+#include "config_parser.h"
 #include "decorate.h"
 #include <X11/Xft/Xft.h>
 #include <string.h>
@@ -65,7 +66,7 @@ static int make_xft(const char *hex, XftColor *out) {
 #define BTN_PAD  3
 
 static int btn_x(Client *c) { return c->w - BTN_W - BTN_PAD; }
-static int btn_y(void)      { return (TITLE_BAR_HEIGHT - BTN_H) / 2; }
+static int btn_y(void)      { return (cfg.title_bar_height - BTN_H) / 2; }
 
 /* ── decorate_init ───────────────────────────────────────── */
 void decorate_init(void) {
@@ -73,11 +74,10 @@ void decorate_init(void) {
     g_visual = DefaultVisual(wm->dpy, wm->screen);
     g_gc     = XCreateGC(wm->dpy, wm->root, 0, NULL);
 
-    g_font = XftFontOpenName(wm->dpy, wm->screen,
-                             "JetBrains Mono:size=9:weight=medium");
+    g_font = XftFontOpenName(wm->dpy, wm->screen, cfg.font);
     if (!g_font) {
-        fprintf(stderr, "swordwm: decorate: JetBrains Mono not found, "
-                        "falling back to monospace\n");
+        fprintf(stderr, "swordwm: decorate: font '%s' not found, "
+                        "falling back to monospace\n", cfg.font);
         g_font = XftFontOpenName(wm->dpy, wm->screen, "monospace:size=9");
     }
     if (!g_font) {
@@ -102,23 +102,24 @@ void decorate_cleanup(void) {
 void decorate_draw(Client *c) {
     if (!c || !c->frame) return;
 
-    const char *bg_hex  = c->focused ? COLOR_FOCUSED_TITLE_BG
-                                     : COLOR_UNFOCUSED_TITLE_BG;
-    const char *fg_hex  = c->focused ? COLOR_FOCUSED_TITLE_FG
-                                     : COLOR_UNFOCUSED_TITLE_FG;
-    const char *bdr_hex = c->urgent  ? COLOR_URGENT_BORDER
-                        : c->focused ? COLOR_FOCUSED_BORDER
-                                     : COLOR_UNFOCUSED_BORDER;
+    /* Use runtime cfg colors — they can be overridden from the config file */
+    const char *bg_hex  = c->focused ? cfg.color_focused_title_bg
+                                     : cfg.color_unfocused_title_bg;
+    const char *fg_hex  = c->focused ? cfg.color_focused_title_fg
+                                     : cfg.color_unfocused_title_fg;
+    const char *bdr_hex = c->urgent  ? cfg.color_urgent_border
+                        : c->focused ? cfg.color_focused_border
+                                     : cfg.color_unfocused_border;
 
     /* Background */
     XSetForeground(wm->dpy, g_gc, parse_hex(bg_hex));
     XFillRectangle(wm->dpy, c->frame, g_gc,
-                   0, 0, (unsigned)c->w, (unsigned)TITLE_BAR_HEIGHT);
+                   0, 0, (unsigned)c->w, (unsigned)cfg.title_bar_height);
 
     /* Separator line */
     XSetForeground(wm->dpy, g_gc, parse_hex(bdr_hex));
     XDrawLine(wm->dpy, c->frame, g_gc,
-              0, TITLE_BAR_HEIGHT - 1, c->w, TITLE_BAR_HEIGHT - 1);
+              0, cfg.title_bar_height - 1, c->w, cfg.title_bar_height - 1);
 
     /* Frame border (sets XSetWindowBorder colour via GC draw) */
     XSetWindowBorder(wm->dpy, c->frame, parse_hex(bdr_hex));
@@ -167,7 +168,7 @@ void decorate_draw(Client *c) {
                     strncat(title, ellipsis, sizeof(title) - (size_t)lo - 1);
                 }
 
-                int ty = (TITLE_BAR_HEIGHT + g_font->ascent - g_font->descent) / 2;
+                int ty = (cfg.title_bar_height + g_font->ascent - g_font->descent) / 2;
                 XftDrawStringUtf8(xd, &fg, g_font,
                                   8, ty,
                                   (const FcChar8 *)title,
@@ -236,7 +237,7 @@ static int in_btn(Client *c, int x, int y) {
 
 static DragMode hit_test(Client *c, int x, int y) {
     int w = c->w, h = c->h;
-    if (y < TITLE_BAR_HEIGHT && !in_btn(c, x, y)) return DRAG_MOVE;
+    if (y < cfg.title_bar_height && !in_btn(c, x, y)) return DRAG_MOVE;
     if (x < EDGE   && y < EDGE)    return DRAG_RESIZE_TL;
     if (x > w-EDGE && y < EDGE)    return DRAG_RESIZE_TR;
     if (x < EDGE   && y > h-EDGE)  return DRAG_RESIZE_BL;
@@ -307,18 +308,7 @@ int decorate_button_press(Client *c, XButtonEvent *e) {
         last = e->time;
     }
 
-    /* Button1 drag on title bar / edges */
-    if (e->button == Button1) {
-        DragMode m = hit_test(c, lx, ly);
-        if (m != DRAG_NONE) {
-            if (!c->floating && m == DRAG_MOVE)
-                action_toggle_floating(NULL); /* pull out of tiling */
-            start_drag(m, c, e);
-            return 1;
-        }
-    }
-
-    /* Mod+Button1 anywhere = move */
+    /* Mod+Button1 anywhere = move (check BEFORE plain drag so it isn't shadowed) */
     if (e->button == Button1 && (e->state & MOD_KEY)) {
         if (!c->floating) action_toggle_floating(NULL);
         start_drag(DRAG_MOVE, c, e);
@@ -330,6 +320,17 @@ int decorate_button_press(Client *c, XButtonEvent *e) {
         if (!c->floating) action_toggle_floating(NULL);
         start_drag(DRAG_RESIZE_BR, c, e);
         return 1;
+    }
+
+    /* Button1 drag on title bar / edges (no Mod key) */
+    if (e->button == Button1) {
+        DragMode m = hit_test(c, lx, ly);
+        if (m != DRAG_NONE) {
+            if (!c->floating && m == DRAG_MOVE)
+                action_toggle_floating(NULL); /* pull out of tiling */
+            start_drag(m, c, e);
+            return 1;
+        }
     }
 
     return 0;
@@ -365,10 +366,15 @@ void decorate_motion(Client *c, XMotionEvent *e) {
     dc->x = nx; dc->y = ny; dc->w = nw; dc->h = nh;
     XMoveResizeWindow(wm->dpy, dc->frame, nx, ny,
                       (unsigned)nw, (unsigned)nh);
+    /* Use runtime cfg for title bar and border dimensions */
+    int inner_w = nw - cfg.border_width * 2;
+    int inner_h = nh - cfg.title_bar_height - cfg.border_width * 2;
+    if (inner_w < 1) inner_w = 1;
+    if (inner_h < 1) inner_h = 1;
     XMoveResizeWindow(wm->dpy, dc->win,
-                      0, TITLE_BAR_HEIGHT,
-                      (unsigned)(nw - BORDER_WIDTH*2),
-                      (unsigned)(nh - TITLE_BAR_HEIGHT - BORDER_WIDTH*2));
+                      0, cfg.title_bar_height,
+                      (unsigned)inner_w,
+                      (unsigned)inner_h);
 }
 
 /* ── decorate_button_release ─────────────────────────────── */

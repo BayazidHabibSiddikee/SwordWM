@@ -2,6 +2,7 @@
  * src/core/client.c — Client list, window management, frame creation
  * ========================================================= */
 #include "swordwm.h"
+#include "config_parser.h"
 
 /* ── Helper: parse color string to X11 pixel ────────────── */
 static unsigned long parse_color(const char *hex) {
@@ -76,19 +77,25 @@ Client *client_add(Window win, Workspace *ws) {
     c->w = wa.width;
     c->h = wa.height;
 
-    /* Get window title */
-    char *name = NULL;
-    if (XFetchName(wm->dpy, win, &name) && name) {
-        strncpy(c->title, name, sizeof(c->title) - 1);
-        XFree(name);
-    }
+    /* Get window title (UTF-8 aware) */
+    c->title[0] = '\0';  /* Initialize to empty */
+    ewmh_read_title(c);  /* Handles _NET_WM_NAME (UTF-8) + fallback to WM_NAME */
 
-    /* Read WM_NORMAL_HINTS for min/max size constraints */
+    /* Read WM_NORMAL_HINTS for min/max size constraints and resize increments */
     XSizeHints hints;
     long supplied = 0;
     if (XGetWMNormalHints(wm->dpy, win, &hints, &supplied)) {
         c->min_w = (supplied & PMinSize) ? hints.min_width  : 0;
         c->min_h = (supplied & PMinSize) ? hints.min_height : 0;
+        c->max_w = (supplied & PMaxSize) ? hints.max_width  : 0;
+        c->max_h = (supplied & PMaxSize) ? hints.max_height : 0;
+        c->inc_w = (supplied & PResizeInc) ? hints.width_inc  : 1;
+        c->inc_h = (supplied & PResizeInc) ? hints.height_inc : 1;
+    } else {
+        /* Initialize to sensible defaults if no hints */
+        c->min_w = c->min_h = 0;
+        c->max_w = c->max_h = 0;
+        c->inc_w = c->inc_h = 1;
     }
 
     /* Create frame window */
@@ -184,6 +191,11 @@ Client *client_add(Window win, Workspace *ws) {
     /* Tell clients how much space our frame adds */
     ewmh_set_frame_extents(c);
 
+    /* Add to global client tracking for fast lookups */
+    if (wm->num_clients < 512) {
+        wm->all_clients[wm->num_clients++] = c;
+    }
+
     ewmh_update_client_list();
 
     /* Draw the initial title bar */
@@ -217,16 +229,29 @@ void client_remove(Client *c) {
         c->frame = None;
     }
 
+    /* Remove from global client tracking array */
+    for (int i = 0; i < wm->num_clients; i++) {
+        if (wm->all_clients[i] == c) {
+            /* Shift remaining clients down to fill the gap */
+            for (int j = i; j < wm->num_clients - 1; j++) {
+                wm->all_clients[j] = wm->all_clients[j + 1];
+            }
+            wm->num_clients--;
+            break;
+        }
+    }
+
     free(c);
     ewmh_update_client_list();
 }
 
 /* ── client_find ─────────────────────────────────────────── */
 Client *client_find(Window win) {
-    for (Workspace *ws = wm->workspaces; ws; ws = ws->next) {
-        for (Client *c = ws->head; c; c = c->next) {
-            if (c->win == win || c->frame == win)
-                return c;
+    /* Use global client array for O(n) lookup instead of O(n²) nested loops */
+    for (int i = 0; i < wm->num_clients; i++) {
+        Client *c = wm->all_clients[i];
+        if (c->win == win || c->frame == win) {
+            return c;
         }
     }
     return NULL;
@@ -313,10 +338,13 @@ void unmanage_window(Window win, int destroyed) {
 
     if (!destroyed) {
         /* Reparent client back to root before destroying frame.
+         * The client sits at (0, TITLE_BAR_HEIGHT) relative to the frame,
+         * so its absolute position is (c->x, c->y + cfg.title_bar_height).
          * Use startup error handler to suppress BadMatch/BadWindow
          * if the window was destroyed between UnmapNotify and here. */
         XSetErrorHandler(x11_error_handler_startup);
-        XReparentWindow(wm->dpy, c->win, wm->root, c->x, c->y);
+        XReparentWindow(wm->dpy, c->win, wm->root,
+                        c->x, c->y + cfg.title_bar_height);
         XSync(wm->dpy, False);
         XSetErrorHandler(x11_error_handler);
     }

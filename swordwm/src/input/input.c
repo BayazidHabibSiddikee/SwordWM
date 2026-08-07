@@ -5,6 +5,7 @@
 #include "swordwm.h"
 #include "config_parser.h"
 #include <stdlib.h>
+#include <ctype.h>
 
 /* ── Keybinding table from config.h ──────────────────────── */
 static const KeyBinding keybindings[] = { KEYBINDINGS };
@@ -138,10 +139,16 @@ void action_toggle_floating(const char *arg) {
         }
         XMoveResizeWindow(wm->dpy, c->frame,
                           c->x, c->y, c->w, c->h);
+        /* Use runtime cfg values for title bar and border, not compile-time
+         * constants — these can differ after a config reload. */
+        int inner_w = c->w - cfg.border_width * 2;
+        int inner_h = c->h - cfg.title_bar_height - cfg.border_width * 2;
+        if (inner_w < 1) inner_w = 1;
+        if (inner_h < 1) inner_h = 1;
         XMoveResizeWindow(wm->dpy, c->win,
-                          0, TITLE_BAR_HEIGHT,
-                          c->w - BORDER_WIDTH * 2,
-                          c->h - TITLE_BAR_HEIGHT - BORDER_WIDTH * 2);
+                          0, cfg.title_bar_height,
+                          (unsigned)inner_w,
+                          (unsigned)inner_h);
         XRaiseWindow(wm->dpy, c->frame);
     } else {
         c->old_x = c->x; c->old_y = c->y;
@@ -188,6 +195,13 @@ void action_quit(const char *arg) {
 /* ── action_switch_workspace ─────────────────────────────── */
 void action_switch_workspace(const char *id) {
     if (!id) return;
+    
+    /* Validate input is numeric */
+    if (!isdigit((unsigned char)id[0])) {
+        fprintf(stderr, "swordwm: workspace '%s' is not numeric, ignored\n", id);
+        return;
+    }
+    
     int n = atoi(id);
     if (n < 0 || n >= wm->num_workspaces) {
         fprintf(stderr, "swordwm: workspace %d out of range [0,%d], ignored\n",
@@ -200,6 +214,13 @@ void action_switch_workspace(const char *id) {
 /* ── action_move_to_workspace ────────────────────────────── */
 void action_move_to_workspace(const char *id) {
     if (!id || !wm->focused) return;
+    
+    /* Validate input is numeric */
+    if (!isdigit((unsigned char)id[0])) {
+        fprintf(stderr, "swordwm: workspace '%s' is not numeric, ignored\n", id);
+        return;
+    }
+    
     int n = atoi(id);
     if (n < 0 || n >= wm->num_workspaces) {
         fprintf(stderr, "swordwm: workspace %d out of range [0,%d], ignored\n",

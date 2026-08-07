@@ -24,6 +24,8 @@ struct Client {
     int          w, h;      /* frame size (incl. title bar) */
     int          old_x, old_y, old_w, old_h; /* saved for unfloat */
     int          min_w, min_h;  /* from WM_NORMAL_HINTS PMinSize    */
+    int          max_w, max_h;  /* from WM_NORMAL_HINTS PMaxSize    */
+    int          inc_w, inc_h;  /* from WM_NORMAL_HINTS PResizeInc  */
     int          floating;     /* 1 = floating, 0 = tiled        */
     int          focused;      /* 1 = has input focus            */
     int          urgent;       /* 1 = demands attention          */
@@ -68,6 +70,10 @@ typedef struct {
     Client     *focused;         /* currently focused client         */
     int         num_workspaces;  /* total workspace count            */
 
+    /* Fast client lookup - simple array for O(1) access */
+    Client     *all_clients[512]; /* global client array (max 512 windows) */
+    int         num_clients;       /* current client count */
+
     /* EWMH atoms (populated in x11_connect) */
     Atom        wm_protocols;
     Atom        wm_delete_window;
@@ -76,6 +82,7 @@ typedef struct {
     Atom        net_wm_name;
     Atom        net_active_window;
     Atom        net_client_list;
+    Atom        net_client_list_stacking;
     Atom        net_current_desktop;
     Atom        net_wm_desktop;
     Atom        net_wm_state;
@@ -86,6 +93,7 @@ typedef struct {
     Atom        net_wm_window_type_utility;
     Atom        net_wm_window_type_desktop;
     Atom        net_wm_window_type_dock;
+    Atom        net_wm_moveresize;
 } WMState;
 
 #endif /* TYPES_H */

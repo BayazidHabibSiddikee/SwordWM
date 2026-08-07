@@ -36,13 +36,26 @@ static void usage(void) {
         "  -h          Show this help\n");
 }
 
+/* Get config directory path (XDG_CONFIG_HOME aware) */
+static const char *get_config_dir(void) {
+    static char dir[512];
+    const char *xdg_config = getenv("XDG_CONFIG_HOME");
+    const char *home = getenv("HOME");
+    
+    if (xdg_config && xdg_config[0]) {
+        snprintf(dir, sizeof(dir), "%s/swordwm", xdg_config);
+    } else if (home) {
+        snprintf(dir, sizeof(dir), "%s/.config/swordwm", home);
+    } else {
+        snprintf(dir, sizeof(dir), "/root/.config/swordwm");
+    }
+    return dir;
+}
+
 /* Send SIGHUP to a running swordwm instance */
 static int do_reload(void) {
-    const char *home = getenv("HOME");
-    if (!home) return 1;
-    char pid_path[256];
-    snprintf(pid_path, sizeof(pid_path),
-             "%s/.config/swordwm/swordwm.pid", home);
+    char pid_path[512];
+    snprintf(pid_path, sizeof(pid_path), "%s/swordwm.pid", get_config_dir());
     FILE *f = fopen(pid_path, "r");
     if (!f) {
         fprintf(stderr, "swordwm: no pid file at %s\n", pid_path);
@@ -59,11 +72,7 @@ static int do_reload(void) {
 
 /* Write our PID so --reload can find us */
 static void write_pid(void) {
-    const char *home = getenv("HOME");
-    if (!home) return;
-
-    char dir[256];
-    snprintf(dir, sizeof(dir), "%s/.config/swordwm", home);
+    const char *dir = get_config_dir();
     mkdir(dir, 0700);  /* 0700 — only owner can read PID dir */
 
     char path[512];
@@ -73,11 +82,8 @@ static void write_pid(void) {
 }
 
 static void remove_pid(void) {
-    const char *home = getenv("HOME");
-    if (!home) return;
     char path[512];
-    snprintf(path, sizeof(path),
-             "%s/.config/swordwm/swordwm.pid", home);
+    snprintf(path, sizeof(path), "%s/swordwm.pid", get_config_dir());
     unlink(path);
 }
 
@@ -126,13 +132,15 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "swordwm: running — Mod+Shift+E to quit\n");
 
     /*
-     * Event loop — uses select() on the X connection fd so we can
-     * respond to signals (g_reload) without busy-waiting.
-     * select() will be interrupted by SIGHUP/SIGCHLD (EINTR) which
+     * Event loop — uses pselect() to atomically check for signals and X events.
+     * This eliminates the race condition where SIGHUP could be missed.
+     * pselect() will be interrupted by SIGHUP/SIGCHLD (EINTR) which
      * is exactly what we want — we check g_reload then re-block.
      */
     int xfd = ConnectionNumber(wm->dpy);
     XEvent ev;
+    sigset_t empty_mask;
+    sigemptyset(&empty_mask);
 
     while (wm->running) {
         /* Check SIGHUP reload flag before blocking */
@@ -149,14 +157,15 @@ int main(int argc, char *argv[]) {
 
         if (!wm->running) break;
 
-        /* Block until X has data or a signal interrupts us */
+        /* Block until X has data or a signal interrupts us.
+         * pselect() atomically unblocks signals during the wait, 
+         * eliminating the race condition with g_reload. */
         fd_set rfds;
         FD_ZERO(&rfds);
         FD_SET(xfd, &rfds);
-        /* 1-second timeout so g_reload is never stale for long */
-        struct timeval tv = { 1, 0 };
-        select(xfd + 1, &rfds, NULL, NULL, &tv);
-        /* EINTR (signal) or timeout — loop back and check g_reload */
+        struct timespec timeout = { 1, 0 }; // 1 second timeout as fallback
+        pselect(xfd + 1, &rfds, NULL, NULL, &timeout, &empty_mask);
+        /* Signal or timeout — loop back and check g_reload */
     }
 
     remove_pid();

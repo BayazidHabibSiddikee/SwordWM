@@ -52,6 +52,9 @@ typedef struct {
     int focus_follows_mouse;
     int master_ratio;        /* master area width % (10–90), default 50 */
 
+    /* Font configuration */
+    char font[256];          /* font specification string */
+
     /* Colours (hex strings like "#5e81f4") */
     char color_focused_border    [CONF_COLOR_LEN];
     char color_unfocused_border  [CONF_COLOR_LEN];
