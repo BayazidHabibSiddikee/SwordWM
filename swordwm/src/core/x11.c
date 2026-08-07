@@ -189,7 +189,8 @@ void x11_subscribe_events(void) {
         KeyPressMask             |
         ButtonPressMask          |
         ButtonReleaseMask        |
-        PointerMotionMask
+        PointerMotionMask        |
+        EnterWindowMask          /* required for focus-follows-mouse */
     );
 }
 
