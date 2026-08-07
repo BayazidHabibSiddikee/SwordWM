@@ -161,9 +161,13 @@ Client *client_add(Window win, Workspace *ws) {
         PropertyChangeMask | EnterWindowMask |
         FocusChangeMask    | StructureNotifyMask);
 
-    /* Map both frame and client */
-    XMapWindow(wm->dpy, c->frame);
-    XMapWindow(wm->dpy, win);
+    /* Map both frame and client — only if the target workspace is active.
+     * During manage_existing_windows, windows may be assigned to non-current
+     * workspaces; mapping them would make them appear on the wrong desktop. */
+    if (ws == wm->current_ws) {
+        XMapWindow(wm->dpy, c->frame);
+        XMapWindow(wm->dpy, win);
+    }
 
     /* Prepend to workspace client list */
     c->next = ws->head;
