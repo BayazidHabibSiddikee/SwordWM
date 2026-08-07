@@ -480,6 +480,10 @@ void RightPanel::buildDock() {
     connect(audioBtn, &QPushButton::clicked, [this]() { launch("pavucontrol"); });
     m_dockLayout->addWidget(audioBtn);
 
+    auto *brightBtn = makeBtn("  Brightness", m_dock);
+    connect(brightBtn, &QPushButton::clicked, [this]() { launch("brightnessctl menu"); });
+    m_dockLayout->addWidget(brightBtn);
+
     auto *netBtn = makeBtn("  Choose network…", m_dock);
     connect(netBtn, &QPushButton::clicked, [this]() { chooseNetwork(); });
     m_dockLayout->addWidget(netBtn);
