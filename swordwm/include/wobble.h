@@ -2,61 +2,73 @@
 #define WOBBLE_H
 
 /* =========================================================
- * wobble.h — anime-style spring physics for window geometry
+ * wobble.h — advanced spring physics for SwordWM
  *
  * No compositor needed. Animates XMoveResizeWindow directly.
  *
- * Effects:
- *   MAP-IN   : window pops in from slightly smaller + offset,
- *              springs to final size with an overshoot bounce
- *   DROP     : on drag release, final position overshoots and
- *              springs back (watery landing)
- *   SQUEEZE  : while dragging fast, window squishes perpendicular
- *              to movement direction (anime stretch/squash)
+ * Effects (better than Compiz wobbly):
+ *   MAP-IN       : pop in from smaller with overshoot bounce
+ *   DROP BOUNCE  : release with momentum + squash/stretch
+ *   INERTIA     : windows slide after release, decelerate naturally
+ *   EDGE BOUNCE : windows bounce off screen edges like rubber
+ *   ROTATION    : slight rotation during fast drag (organic feel)
+ *   CORNER LAG  : opposite corner lags behind drag (jelly deformation)
+ *   WAVE        : movement ripples through window like a wave
+ *   MULTI-BOUNCE: multiple diminishing bounces before settling
+ *   GRAVITY     : slight downward pull during free-fall
  * ========================================================= */
 
 #include "types.h"
 
 /* ── Per-client spring state ─────────────────────────────── */
 typedef struct {
-    /* Current animated geometry (what we actually draw) */
+    /* Current animated geometry */
     double ax, ay, aw, ah;
+    double rotation;      /* degrees of rotation during drag */
 
-    /* Target geometry (where the window wants to be) */
+    /* Target geometry */
     double tx, ty, tw, th;
 
     /* Velocities */
     double vx, vy, vw, vh;
+    double vrot;           /* rotation velocity */
 
-    /* 1 = this client is actively animating */
+    /* Inertia: momentum after release */
+    double inertia_x, inertia_y;
+    double inertia_friction;
+
+    /* Corner lag (jelly deformation) */
+    double corner_lag_x, corner_lag_y;   /* offset of trailing corner */
+    double corner_vel_x, corner_vel_y;
+
+    /* Wave propagation */
+    double wave_phase;     /* phase of the wave rippling through */
+    double wave_amplitude; /* how strong the wave is */
+    double wave_speed;     /* how fast the wave travels */
+
+    /* Squash/stretch */
+    double squeeze;       /* -1..1: neg=horiz squeeze, pos=vert */
+    double squeeze_vel;
+
+    /* Bounce count for multi-bounce settling */
+    int bounce_count;
+    double bounce_energy;  /* energy remaining in bounce */
+
+    /* 1 = actively animating */
     int active;
 
-    /* Squash/stretch axis remembered from last drag direction */
-    double squeeze; /* -1..1: neg = horizontal squeeze, pos = vertical */
-    double squeeze_vel;
+    /* Direction of last movement (for squash axis) */
+    double last_dir_x, last_dir_y;
 } WobbleState;
 
 /* ── API ─────────────────────────────────────────────────── */
 
-/* Initialize wobble state for a newly managed client.
- * Call from manage_window() after geometry is set. */
 void wobble_init(Client *c);
-
-/* Free state for a client being unmanaged. */
 void wobble_destroy(Client *c);
-
-/* Trigger map-in bounce (call when window first appears). */
 void wobble_map_bounce(Client *c);
-
-/* Trigger drop bounce (call in decorate_button_release).
- * vel_x/vel_y = pointer velocity at release (px/frame). */
 void wobble_drop_bounce(Client *c, double vel_x, double vel_y);
-
-/* Step all active animations by one frame.
- * Returns number of still-active animations (0 = all settled). */
-int wobble_step_all(void);
-
-/* Returns 1 if any client is still animating. */
-int wobble_any_active(void);
+void wobble_edge_bounce(Client *c, int screen_w, int screen_h);
+int  wobble_step_all(void);
+int  wobble_any_active(void);
 
 #endif /* WOBBLE_H */
