@@ -196,12 +196,14 @@ void ewmh_update_desktop_names(void) {
 
 /* ── ewmh_update_workarea ────────────────────────────────── */
 void ewmh_update_workarea(void) {
-    /* One entry per desktop: x, y, width, height */
+    /* One entry per desktop: x, y, width, height.
+     * Use only the configured outer gap here; actual dock/panel
+     * reservations are applied later by ewmh_apply_strut. */
     long wa[4] = {
         cfg.gap_outer,
         cfg.gap_outer,
         wm->sw - cfg.gap_outer * 2,
-        wm->sh - cfg.gap_outer * 2 - 32   /* reserve 32px for bottom bar */
+        wm->sh - cfg.gap_outer * 2
     };
     long all[9 * 4];
     for (int i = 0; i < NUM_WORKSPACES; i++)
