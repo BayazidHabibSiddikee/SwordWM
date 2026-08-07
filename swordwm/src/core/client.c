@@ -3,6 +3,7 @@
  * ========================================================= */
 #include "swordwm.h"
 #include "config_parser.h"
+#include "wobble.h"
 
 /* ── Helper: parse color string to X11 pixel ────────────── */
 static unsigned long parse_color(const char *hex) {
@@ -202,6 +203,9 @@ Client *client_add(Window win, Workspace *ws) {
     ewmh_read_title(c);
     decorate_draw(c);
 
+    /* Initialise wobble physics state for this client */
+    wobble_init(c);
+
     return c;
 }
 
@@ -240,6 +244,9 @@ void client_remove(Client *c) {
             break;
         }
     }
+
+    /* Free wobble physics state */
+    wobble_destroy(c);
 
     free(c);
     ewmh_update_client_list();
@@ -323,6 +330,10 @@ void manage_window(Window win) {
     /* Arrange and focus the new window */
     arrange_workspace(wm->current_ws);
     client_focus(c);
+
+    /* Anime pop-in bounce for floating windows */
+    if (c->floating)
+        wobble_map_bounce(c);
 
     fprintf(stderr, "swordwm: managed window 0x%lx \"%s\" (ws %d, %s)\n",
             win, c->title, c->ws->id + 1,

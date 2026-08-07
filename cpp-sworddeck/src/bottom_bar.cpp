@@ -1,12 +1,14 @@
 #include "bottom_bar.h"
 
 #include <QPainter>
+#include <QPainterPath>
 #include <QFont>
 #include <QFontMetrics>
 #include <QFile>
 #include <QProcess>
 #include <QTimer>
 #include <QMouseEvent>
+#include <QTouchEvent>
 #include <QDateTime>
 #include <QRegularExpression>
 #include <sys/statvfs.h>
@@ -53,6 +55,20 @@ static int memPct() {
         if (kv.size() == 2) info[kv[0].trimmed()] = kv[1].trimmed().split(' ')[0].toLong();
     }
     return (int)(100.0 * (info["MemTotal"] - info["MemAvailable"]) / info["MemTotal"]);
+}
+
+static void memDetails(double &usedGB, double &totalGB) {
+    usedGB = 0; totalGB = 1;
+    QFile f("/proc/meminfo");
+    if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) return;
+    QMap<QString, long> info;
+    while (!f.atEnd()) {
+        QString l = f.readLine();
+        auto kv = l.split(':');
+        if (kv.size() == 2) info[kv[0].trimmed()] = kv[1].trimmed().split(' ')[0].toLong();
+    }
+    totalGB = info["MemTotal"]                            / 1024.0 / 1024.0;
+    usedGB  = (info["MemTotal"] - info["MemAvailable"]) / 1024.0 / 1024.0;
 }
 
 static int diskPct() {
@@ -157,6 +173,71 @@ static QString volume() {
         return isMuted ? QString("🔇 %1%").arg(vol) : QString("🔊 %1%").arg(vol);
     }
     return "";
+}
+
+/*
+ * Read the title of the currently focused window via EWMH:
+ *   _NET_ACTIVE_WINDOW  → Window XID of focused window (on root)
+ *   _NET_WM_NAME        → UTF-8 title of that window
+ * Falls back to WM_NAME (Latin-1) if _NET_WM_NAME is absent.
+ * Returns an empty string if no window is focused or on any error.
+ */
+static QString activeWindowTitle() {
+    Display *dpy = XOpenDisplay(nullptr);
+    if (!dpy) return {};
+
+    Window root = DefaultRootWindow(dpy);
+
+    /* get _NET_ACTIVE_WINDOW */
+    Atom activeAtom = XInternAtom(dpy, "_NET_ACTIVE_WINDOW", False);
+    Atom actual_type;
+    int  actual_format;
+    unsigned long n_items, bytes_after;
+    unsigned char *prop = nullptr;
+
+    Window focused = None;
+    if (XGetWindowProperty(dpy, root, activeAtom, 0, 1, False, XA_WINDOW,
+                           &actual_type, &actual_format,
+                           &n_items, &bytes_after, &prop) == Success && prop) {
+        focused = *(Window *)prop;
+        XFree(prop);
+    }
+
+    if (focused == None || focused == root) {
+        XCloseDisplay(dpy);
+        return {};
+    }
+
+    /* try _NET_WM_NAME (UTF-8) first */
+    QString title;
+    Atom utf8Atom    = XInternAtom(dpy, "UTF8_STRING",   False);
+    Atom nameAtom    = XInternAtom(dpy, "_NET_WM_NAME",  False);
+    prop = nullptr;
+
+    if (XGetWindowProperty(dpy, focused, nameAtom, 0, 1024, False, utf8Atom,
+                           &actual_type, &actual_format,
+                           &n_items, &bytes_after, &prop) == Success && prop) {
+        title = QString::fromUtf8((const char *)prop);
+        XFree(prop);
+    }
+
+    /* fall back to WM_NAME (Latin-1 XA_STRING) */
+    if (title.isEmpty()) {
+        prop = nullptr;
+        if (XGetWindowProperty(dpy, focused, XA_WM_NAME, 0, 1024, False, XA_STRING,
+                               &actual_type, &actual_format,
+                               &n_items, &bytes_after, &prop) == Success && prop) {
+            title = QString::fromLatin1((const char *)prop);
+            XFree(prop);
+        }
+    }
+
+    XCloseDisplay(dpy);
+
+    /* truncate long titles */
+    const int MAX = 50;
+    if (title.length() > MAX) title = title.left(MAX) + "…";
+    return title;
 }
 
 /* ── EWMH workspace helpers (replaces i3-msg entirely) ───── */
@@ -268,9 +349,11 @@ static void switchWorkspaceEWMH(int index) {
 /* ── BottomBar ────────────────────────────────────────────── */
 
 BottomBar::BottomBar(QWidget *parent)
-    : QWidget(parent), m_stats{0,0,0,"","","","","","",100}
+    : QWidget(parent), m_stats{0,0,0,"","","","","","",100,"",0,1}
 {
     setAttribute(Qt::WA_TranslucentBackground);
+    setAttribute(Qt::WA_AcceptTouchEvents);
+    setMouseTracking(true);
 
     auto *t = new QTimer(this);
     connect(t, &QTimer::timeout, this, &BottomBar::refresh);
@@ -280,14 +363,30 @@ BottomBar::BottomBar(QWidget *parent)
     connect(tw, &QTimer::timeout, this, &BottomBar::refreshWorkspaces);
     tw->start(500);
 
+    /* active window title — fast poll */
+    auto *tt = new QTimer(this);
+    connect(tt, &QTimer::timeout, this, [this]() {
+        QString t = activeWindowTitle();
+        if (t != m_stats.activeTitle) { m_stats.activeTitle = t; update(); }
+    });
+    tt->start(500);
+
+    /* physics animation — 60 fps, only runs while something is moving */
+    m_physTimer = new QTimer(this);
+    m_physTimer->setInterval(16);   /* ~62.5 fps */
+    connect(m_physTimer, &QTimer::timeout, this, &BottomBar::physicsStep);
+
     QTimer::singleShot(100, this, &BottomBar::refresh);
 }
 
 void BottomBar::refresh() {
     auto [batPct, batTxt] = battery();
+    double usedGB = 0, totalGB = 1;
+    memDetails(usedGB, totalGB);
     m_stats = {cpu(), memPct(), diskPct(),
                netSpeed(), music(), uptimeStr(),
-               network(), batTxt, volume(), batPct};
+               network(), batTxt, volume(), batPct,
+               activeWindowTitle(), usedGB, totalGB};
     update();
 }
 
@@ -295,7 +394,63 @@ void BottomBar::refreshWorkspaces() {
     auto ws = workspacesEWMH();
     if (ws.size() != m_ws.size() || ws != m_ws) {
         m_ws = ws;
+        /* grow/shrink physics array to match */
+        while (m_phys.size() < m_ws.size()) m_phys.append(WsPhysics{});
+        while (m_phys.size() > m_ws.size()) m_phys.removeLast();
         update();
+    }
+}
+
+/* =========================================================
+ * physicsStep — spring + magnetic simulation at ~60 fps
+ *
+ * Spring bounce (y):
+ *   F = -k*x - damping*v   (damped harmonic oscillator)
+ *   k=0.35  damping=0.55
+ *
+ * Magnetic scale:
+ *   Target scale = 1.18 when hovered, 1.0 otherwise
+ *   Spring toward target: k=0.22  damping=0.60
+ * ========================================================= */
+void BottomBar::physicsStep() {
+    const double kSpring  = 0.35,  dampSpring  = 0.55;
+    const double kMag     = 0.22,  dampMag     = 0.60;
+    const double REST_EPS = 0.002; /* threshold to declare "at rest" */
+
+    bool anyMoving = false;
+
+    for (int i = 0; i < m_phys.size(); i++) {
+        WsPhysics &ph = m_phys[i];
+
+        /* ── y spring ── */
+        double ay = -kSpring * ph.yOff - dampSpring * ph.yVel;
+        ph.yVel += ay;
+        ph.yOff += ph.yVel;
+        if (qAbs(ph.yOff) < REST_EPS && qAbs(ph.yVel) < REST_EPS) {
+            ph.yOff = 0; ph.yVel = 0;
+        } else {
+            anyMoving = true;
+        }
+
+        /* ── magnetic scale ── */
+        double targetScale = (i == m_hoveredWs) ? 1.18 : 1.0;
+        double as = kMag * (targetScale - ph.scale) - dampMag * ph.scaleVel;
+        ph.scaleVel += as;
+        ph.scale    += ph.scaleVel;
+        if (qAbs(ph.scale - targetScale) < REST_EPS &&
+            qAbs(ph.scaleVel) < REST_EPS) {
+            ph.scale = targetScale; ph.scaleVel = 0;
+        } else {
+            anyMoving = true;
+        }
+    }
+
+    update();
+
+    /* Stop timer when everything is at rest to save CPU */
+    if (!anyMoving) {
+        m_physTimer->stop();
+        m_physDirty = false;
     }
 }
 
@@ -303,10 +458,86 @@ void BottomBar::mousePressEvent(QMouseEvent *e) {
     int x = (int)e->position().x();
     for (int i = 0; i < m_wsRects.size(); i++) {
         if (m_wsRects[i].first <= x && x <= m_wsRects[i].second) {
-            switchWorkspaceEWMH(i);   /* 0-based index */
+            switchWorkspaceEWMH(i);
+            /* kick spring downward (positive y = down) */
+            if (i < m_phys.size()) {
+                m_phys[i].yOff = 4.0;
+                m_phys[i].yVel = 2.0;
+            }
+            if (!m_physTimer->isActive()) m_physTimer->start();
+            m_physDirty = true;
             return;
         }
     }
+}
+
+void BottomBar::mouseMoveEvent(QMouseEvent *e) {
+    int x = (int)e->position().x();
+    int hovered = -1;
+    for (int i = 0; i < m_wsRects.size(); i++) {
+        if (m_wsRects[i].first <= x && x <= m_wsRects[i].second) {
+            hovered = i; break;
+        }
+    }
+    if (hovered != m_hoveredWs) {
+        m_hoveredWs = hovered;
+        if (!m_physTimer->isActive()) m_physTimer->start();
+        m_physDirty = true;
+        update();
+    }
+}
+
+void BottomBar::leaveEvent(QEvent *) {
+    if (m_hoveredWs != -1) {
+        m_hoveredWs = -1;
+        if (!m_physTimer->isActive()) m_physTimer->start();
+        m_physDirty = true;
+        update();
+    }
+}
+
+bool BottomBar::event(QEvent *e) {
+    if (e->type() == QEvent::TouchBegin ||
+        e->type() == QEvent::TouchUpdate ||
+        e->type() == QEvent::TouchEnd)
+    {
+        auto *te = static_cast<QTouchEvent *>(e);
+        const auto &points = te->points();
+
+        if (e->type() == QEvent::TouchBegin) {
+            m_touchCount = points.size();
+            if (m_touchCount == 3) {
+                m_swipeStart = points[0].position();
+                m_swiping    = true;
+            }
+        } else if (e->type() == QEvent::TouchUpdate && m_swiping) {
+            /* keep updating touch count in case fingers are lifted mid-gesture */
+            m_touchCount = qMax(m_touchCount, (int)points.size());
+        } else if (e->type() == QEvent::TouchEnd && m_swiping) {
+            m_swiping = false;
+            if (m_touchCount >= 3 && !points.isEmpty()) {
+                qreal dx = points[0].position().x() - m_swipeStart.x();
+                /* require at least 40 px horizontal movement */
+                if (qAbs(dx) > 40) {
+                    /* find current workspace index */
+                    int cur = -1;
+                    for (int i = 0; i < m_ws.size(); i++) {
+                        if (m_ws[i].focused) { cur = i; break; }
+                    }
+                    if (cur >= 0) {
+                        int next = (dx < 0)
+                            ? qMin(cur + 1, m_ws.size() - 1)   /* swipe left  → next */
+                            : qMax(cur - 1, 0);                 /* swipe right → prev */
+                        if (next != cur) switchWorkspaceEWMH(next);
+                    }
+                }
+            }
+            m_touchCount = 0;
+        }
+        e->accept();
+        return true;
+    }
+    return QWidget::event(e);
 }
 
 void BottomBar::paintEvent(QPaintEvent *) {
@@ -322,20 +553,69 @@ void BottomBar::paintEvent(QPaintEvent *) {
     /* ── Workspaces ──────────────────────────────────────── */
     m_wsRects.clear();
     int x = 6;
-    for (const auto &ws : m_ws) {
+    for (int i = 0; i < m_ws.size(); i++) {
+        const auto &ws = m_ws[i];
         int tw = fm.horizontalAdvance(ws.name);
-        int bw = tw + 14;
+        int bw = tw + 16;
+        int bh = H - 6;
+        int by = 3;
+
+        /* physics */
+        double sc  = (i < m_phys.size()) ? m_phys[i].scale : 1.0;
+        double yof = (i < m_phys.size()) ? m_phys[i].yOff  : 0.0;
+
+        /* Scaled width/height and centered position */
+        int sbw = (int)(bw * sc);
+        int sbh = (int)(bh * sc);
+        int sx  = x + (bw - sbw) / 2;
+        int sy  = by + (bh - sbh) / 2 + (int)yof;
+
+        QPainterPath path;
+        path.addRoundedRect(sx, sy, sbw, sbh, 4 * sc, 4 * sc);
+
+        bool hovered = (i == m_hoveredWs);
+
         if (ws.focused) {
-            p.fillRect(x, 3, bw, H - 6, WS_BG);
-            p.setPen(CYAN);
+            p.fillPath(path, hovered ? CYAN.lighter(115) : CYAN);
+            p.setPen(QPen(CYAN.darker(130), 1));
+            p.drawPath(path);
+            p.setPen(QColor(30, 34, 40));
         } else if (ws.urgent) {
-            p.setPen(RED);
+            p.fillPath(path, hovered ? QColor(224,108,117,220) : QColor(224,108,117,180));
+            p.setPen(QPen(RED, 1));
+            p.drawPath(path);
+            p.setPen(QColor(255, 255, 255));
+        } else if (hovered) {
+            p.fillPath(path, QColor(97, 175, 239, 40));
+            p.setPen(QPen(CYAN, 1));
+            p.drawPath(path);
+            p.setPen(CYAN);
         } else {
-            p.setPen(DIM);
+            p.fillPath(path, QColor(52, 58, 70, 200));
+            p.setPen(QPen(QColor(80, 88, 104), 1));
+            p.drawPath(path);
+            p.setPen(QColor(100, 110, 130));
         }
-        p.drawText(x + 7, y, ws.name);
+
+        /* Draw text centered in the scaled button */
+        p.save();
+        if (sc != 1.0) {
+            /* scale font size with button */
+            QFont sf = f;
+            sf.setPointSizeF(f.pointSizeF() * sc);
+            p.setFont(sf);
+            QFontMetrics sfm(sf);
+            int tx = sx + (sbw - sfm.horizontalAdvance(ws.name)) / 2;
+            int ty = sy + (sbh + sfm.ascent() - sfm.descent()) / 2;
+            p.drawText(tx, ty, ws.name);
+        } else {
+            p.drawText(x + 8, y + (int)yof, ws.name);
+        }
+        p.restore();
+        p.setFont(f);   /* restore font for next iteration */
+
         m_wsRects.append({x, x + bw});
-        x += bw + 2;
+        x += bw + 3;
     }
     x += 8;
 
@@ -345,26 +625,38 @@ void BottomBar::paintEvent(QPaintEvent *) {
     QString sep = "  │  ";
 
     auto cpuCol = [](int v) { return v >= 80 ? RED : v >= 50 ? AMBER : GREEN; };
+    auto memCol = [](int v) { return v >= 80 ? RED : v >= 60 ? AMBER : CYAN; };
     auto batCol = [](int v) { return v <= 20 ? RED : v <= 40 ? AMBER : GREEN; };
+
+    /* Format RAM as "X.XG/Y.YG" — more informative than a bare percent */
+    QString ramStr = QString("%1G/%2G")
+                     .arg(m_stats.memUsedGB,  0, 'f', 1)
+                     .arg(m_stats.memTotalGB, 0, 'f', 1);
 
     struct Part { QColor c; QString t; };
     QVector<Part> parts = {
-        {CYAN,            QString("[%1]  %2").arg(user.toUpper())
-                          .arg(now.toString("HH:mm:ss  ddd dd MMM"))},
-        {DIM,             sep},
-        {GREEN,           "⚡ CPU: "},
+        {CYAN,                QString("[%1]  %2").arg(user.toUpper())
+                              .arg(now.toString("HH:mm:ss  ddd dd MMM"))},
+        {DIM,                 sep},
+        {GREEN,               "⚡ CPU: "},
         {cpuCol(m_stats.cpu), QString("%1%").arg(m_stats.cpu)},
-        {DIM,             sep},
-        {GREEN,           "🧠 RAM: "},
-        {CYAN,            QString("%1%").arg(m_stats.mem)},
-        {DIM,             sep},
-        {GREEN,           "💾 /: "},
-        {CYAN,            QString("%1%").arg(m_stats.disk)},
-        {DIM,             sep},
-        {CYAN,            m_stats.net},
-        {DIM,             sep},
-        {GREEN,           m_stats.music},
+        {DIM,                 sep},
+        {GREEN,               "🧠 RAM: "},
+        {memCol(m_stats.mem), ramStr},
+        {DIM,                 sep},
+        {GREEN,               "💾 /: "},
+        {CYAN,                QString("%1%").arg(m_stats.disk)},
+        {DIM,                 sep},
+        {CYAN,                m_stats.net},
+        {DIM,                 sep},
     };
+
+    /* active window title takes priority; fall back to music */
+    if (!m_stats.activeTitle.isEmpty()) {
+        parts.append({AMBER,  "▸ " + m_stats.activeTitle});
+    } else {
+        parts.append({GREEN,  m_stats.music});
+    }
 
     for (const auto &pt : parts) {
         p.setPen(pt.c);

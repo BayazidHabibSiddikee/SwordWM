@@ -54,7 +54,7 @@ private:
     int m_temp      = 0;
     bool m_hasTemp  = false;
     QList<QPair<QString, QPair<double,double>>> m_procs;
-    int m_statsBottom  = 200;
+    int m_statsBottom  = 420;   /* conservative initial value; corrected after first paint */
     int m_statsCounter = 0;
 
     /* Outer scroll area wrapping the entire dock */

@@ -16,6 +16,7 @@
 #include "swordwm.h"
 #include "config_parser.h"
 #include "decorate.h"
+#include "wobble.h"
 #include <X11/Xft/Xft.h>
 #include <string.h>
 
@@ -41,6 +42,9 @@ static struct {
     int      start_x, start_y;
     int      orig_fx, orig_fy;
     int      orig_fw, orig_fh;
+    /* velocity tracking for wobble_drop_bounce */
+    int      prev_x, prev_y;
+    double   vel_x,  vel_y;
 } g_drag;
 
 /* ── Color helpers ───────────────────────────────────────── */
@@ -363,6 +367,12 @@ void decorate_motion(Client *c, XMotionEvent *e) {
     if (nw < 120) nw = 120;
     if (nh < 60)  nh = 60;
 
+    /* Track instantaneous velocity (pixels per frame) for drop bounce */
+    g_drag.vel_x = e->x_root - g_drag.prev_x;
+    g_drag.vel_y = e->y_root - g_drag.prev_y;
+    g_drag.prev_x = e->x_root;
+    g_drag.prev_y = e->y_root;
+
     dc->x = nx; dc->y = ny; dc->w = nw; dc->h = nh;
     XMoveResizeWindow(wm->dpy, dc->frame, nx, ny,
                       (unsigned)nw, (unsigned)nh);
@@ -380,8 +390,14 @@ void decorate_motion(Client *c, XMotionEvent *e) {
 /* ── decorate_button_release ─────────────────────────────── */
 void decorate_button_release(void) {
     if (g_drag.mode != DRAG_NONE) {
+        /* Trigger drop bounce with the measured release velocity */
+        if (g_drag.client && g_drag.mode == DRAG_MOVE)
+            wobble_drop_bounce(g_drag.client, g_drag.vel_x, g_drag.vel_y);
+
         XUngrabPointer(wm->dpy, CurrentTime);
         g_drag.mode   = DRAG_NONE;
         g_drag.client = NULL;
+        g_drag.vel_x  = 0;
+        g_drag.vel_y  = 0;
     }
 }

@@ -1,15 +1,18 @@
 #include "pipes_layer.h"
 #include <QWidget>
 #include <QFont>
+#include <QRandomGenerator>
 #include <algorithm>
 
-static const QChar PIPE_H   = QChar(0x2501);
-static const QChar PIPE_V   = QChar(0x2503);
-static const QChar PIPE_TL  = QChar(0x250F);
-static const QChar PIPE_BR  = QChar(0x251B);
-static const QChar PIPE_CROSS = QChar(0x2533);
+static const QChar PIPE_H      = QChar(0x2501);
+static const QChar PIPE_V      = QChar(0x2503);
+static const QChar PIPE_TL     = QChar(0x250F);
+static const QChar PIPE_TR     = QChar(0x2513);
+static const QChar PIPE_BL     = QChar(0x2517);
+static const QChar PIPE_BR     = QChar(0x251B);
+static const QChar PIPE_CROSS  = QChar(0x2533);
 
-static const QColor PIPE_COLORS[] = {
+const QVector<QColor> PipesLayer::PIPE_COLORS = {
     QColor(97, 175, 239),
     QColor(152, 195, 121),
     QColor(229, 192, 123),
@@ -17,10 +20,17 @@ static const QColor PIPE_COLORS[] = {
     QColor(86, 182, 194),
     QColor(224, 108, 117),
 };
-static const int NUM_COLORS = sizeof(PIPE_COLORS) / sizeof(PIPE_COLORS[0]);
 
-PipesLayer::PipesLayer(QWidget *widget, int cell, int interval, int maxAlpha, QObject *parent)
-    : QObject(parent), m_widget(widget), m_cellW(cell), m_cellH(cell), m_maxAlpha(maxAlpha)
+static inline int randInt(int lo, int hi) {
+    return lo + QRandomGenerator::global()->bounded(hi - lo + 1);
+}
+
+static inline bool chance(double p) {
+    return QRandomGenerator::global()->generateDouble() < p;
+}
+
+PipesLayer::PipesLayer(QWidget *parent, int cell, int interval, int maxAlpha)
+    : QObject(parent), m_widget(parent), m_cellW(cell), m_cellH(cell), m_maxAlpha(maxAlpha), m_frame(0)
 {
     auto *timer = new QTimer(this);
     connect(timer, &QTimer::timeout, this, &PipesLayer::tick);
@@ -33,62 +43,72 @@ int PipesLayer::rows() const { return std::max(1, m_widget->height() / m_cellH);
 void PipesLayer::tick() {
     m_frame++;
     int c = cols(), r = rows();
-    std::uniform_int_distribution<int> distC(0, c - 1);
-    std::uniform_int_distribution<int> distR(0, r - 1);
-    std::uniform_int_distribution<int> distColor(0, NUM_COLORS - 1);
-    std::uniform_int_distribution<int> distLen(20, 60);
-    std::uniform_real_distribution<double> prob(0.0, 1.0);
 
-    if (m_pipes.size() < 8 && prob(m_rng) < 0.15) {
+    // Spawn new pipe
+    if (m_pipes.size() < 8 && chance(0.15)) {
         Pipe p;
-        p.col = distC(m_rng);
-        p.row = distR(m_rng);
-        p.dir = (prob(m_rng) < 0.5) ? 'h' : 'v';
-        p.color = PIPE_COLORS[distColor(m_rng)];
+        p.col = randInt(0, c - 1);
+        p.row = randInt(0, r - 1);
+        p.dir = chance(0.5) ? 'h' : 'v';
+        p.color = PIPE_COLORS[randInt(0, PIPE_COLORS.size() - 1)];
         p.len = 0;
         m_pipes.append(p);
     }
 
-    // Age grid entries
-    QList<GridKey> dead;
+    // Age grid cells, remove expired
+    QList<QPoint> dead;
     for (auto it = m_grid.begin(); it != m_grid.end(); ++it) {
-        it->age--;
-        if (it->age <= 0)
+        if (it->age <= 0) {
             dead.append(it.key());
+        } else {
+            it->age--;
+        }
     }
     for (const auto &k : dead)
         m_grid.remove(k);
 
-    // Move pipes
-    for (int i = m_pipes.size() - 1; i >= 0; i--) {
-        auto &pipe = m_pipes[i];
+    // Advance pipes
+    QList<int> deadPipes;
+    for (int i = 0; i < m_pipes.size(); i++) {
+        Pipe &pipe = m_pipes[i];
         QChar ch = (pipe.dir == 'h') ? PIPE_H : PIPE_V;
         m_grid[{pipe.col, pipe.row}] = {ch, pipe.color, 60};
         pipe.len++;
 
-        if (prob(m_rng) < 0.12) {
+        // Random direction change
+        if (chance(0.12)) {
             char oldDir = pipe.dir;
             pipe.dir = (pipe.dir == 'h') ? 'v' : 'h';
             QChar corner;
-            if (oldDir == 'h' && pipe.dir == 'v') corner = PIPE_TL;
-            else if (oldDir == 'v' && pipe.dir == 'h') corner = PIPE_BR;
-            else corner = PIPE_CROSS;
+            if (oldDir == 'h' && pipe.dir == 'v')
+                corner = PIPE_TL;
+            else if (oldDir == 'v' && pipe.dir == 'h')
+                corner = PIPE_BR;
+            else
+                corner = PIPE_CROSS;
             m_grid[{pipe.col, pipe.row}] = {corner, pipe.color, 60};
         }
 
+        // Move
         if (pipe.dir == 'h')
-            pipe.col = (pipe.col + ((prob(m_rng) < 0.5) ? -1 : 1) + c) % c;
+            pipe.col = (pipe.col + (chance(0.5) ? -1 : 1) + c) % c;
         else
-            pipe.row = (pipe.row + ((prob(m_rng) < 0.5) ? -1 : 1) + r) % r;
+            pipe.row = (pipe.row + (chance(0.5) ? -1 : 1) + r) % r;
 
-        if (pipe.len > distLen(m_rng))
-            m_pipes.removeAt(i);
+        // Kill pipes that exceeded random length
+        if (pipe.len > randInt(20, 60))
+            deadPipes.append(i);
     }
 
+    // Remove dead pipes in reverse order to preserve indices
+    for (int i = deadPipes.size() - 1; i >= 0; i--)
+        m_pipes.removeAt(deadPipes[i]);
+
+    // Periodic full clear
     if (m_frame % 400 == 0)
         m_grid.clear();
 
-    emit needsUpdate();
+    m_widget->update();
 }
 
 void PipesLayer::paint(QPainter &p) {
@@ -98,6 +118,6 @@ void PipesLayer::paint(QPainter &p) {
         int alpha = std::min(m_maxAlpha, it->age * 2);
         QColor col(it->color.red(), it->color.green(), it->color.blue(), alpha);
         p.setPen(col);
-        p.drawText(it.key().x * m_cellW, it.key().y * m_cellH + m_cellH - 2, it->ch);
+        p.drawText(it.key().x() * m_cellW, it.key().y() * m_cellH + m_cellH - 2, QString(it->ch));
     }
 }

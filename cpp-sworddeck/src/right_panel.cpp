@@ -31,6 +31,7 @@
 #include <QCoreApplication>
 #include <QRegularExpression>
 #include <QTextStream>
+#include <QStandardPaths>
 #include <sys/statvfs.h>
 #include <unistd.h>
 #include <csignal>
@@ -301,6 +302,11 @@ RightPanel::RightPanel(QWidget *parent)
 
     connect(&m_appsTimer, &QTimer::timeout, this, &RightPanel::checkAppsChanged);
     m_appsTimer.start(3000);
+
+    /* placeDock needs the real painted stats height, which is only known
+     * after the first paintEvent. Defer it so the dock doesn't overlap RAM/DISK. */
+    QTimer::singleShot(50, this, [this]() { update(); });
+    QTimer::singleShot(150, this, [this]() { placeDock(); });
 }
 
 /* =========================================================
@@ -466,7 +472,7 @@ void RightPanel::buildDock() {
     auto *editGraphBtn = makeBtn("  Edit graph", m_dock);
     connect(editGraphBtn, &QPushButton::clicked, [this]() {
         launch(QDir(QCoreApplication::applicationDirPath())
-               .absoluteFilePath("../graph-edit.sh"));
+               .absoluteFilePath("../../graph-edit.sh"));
     });
     m_dockLayout->addWidget(editGraphBtn);
 
@@ -647,15 +653,30 @@ void RightPanel::launch(const QString &cmd) {
  * openPanel — ask the main panel to switch to a tab
  * ========================================================= */
 void RightPanel::openPanel(const QString &tid) {
-    /* Walk up to the CyberDeck window and reach m_main via
-     * the public API exposed on MainPanel */
+    /* Ask MainPanel to switch to the embedded slot (and auto-launch if needed) */
     QWidget *top = window();
     if (!top) return;
     MainPanel *mp = top->findChild<MainPanel *>();
-    if (!mp) return;
-    if (tid == "browser")  mp->switchTab(Tab::Browser);
-    else if (tid == "fm")  mp->switchTab(Tab::FM);
-    else if (tid == "terminal") mp->switchTab(Tab::Terminal);
+    if (mp) { mp->showPanel(tid); return; }
+
+    /* Fallback: MainPanel not found — launch directly */
+    if (tid == "browser") {
+        for (const char *exe : {"SwordFish", "zen-browser", "firefox",
+                                "chromium", "google-chrome-stable"}) {
+            QString p = QStandardPaths::findExecutable(QString::fromUtf8(exe));
+            if (!p.isEmpty()) { QProcess::startDetached(p, {}); return; }
+        }
+    } else if (tid == "fm") {
+        for (const char *exe : {"swordfm", "nautilus", "thunar", "pcmanfm"}) {
+            QString p = QStandardPaths::findExecutable(QString::fromUtf8(exe));
+            if (!p.isEmpty()) { QProcess::startDetached(p, {}); return; }
+        }
+    } else if (tid == "terminal") {
+        for (const char *exe : {"ghostty", "alacritty", "kitty", "xterm"}) {
+            QString p = QStandardPaths::findExecutable(QString::fromUtf8(exe));
+            if (!p.isEmpty()) { QProcess::startDetached(p, {}); return; }
+        }
+    }
 }
 
 /* =========================================================
@@ -743,15 +764,17 @@ void RightPanel::updateGlavaLabel() {
 }
 
 void RightPanel::toggleGlava() {
+    /* Binary lives at SwordWM/cpp-sworddeck/build/sworddeck,
+     * script lives at SwordWM/cyberdesk.sh — two levels up. */
     QString script = QDir(QCoreApplication::applicationDirPath())
-                         .absoluteFilePath("../cyberdesk.sh");
+                         .absoluteFilePath("../../cyberdesk.sh");
     QProcess::startDetached("/bin/sh", {"-c", script + " glava-toggle"});
     QTimer::singleShot(500, this, &RightPanel::updateGlavaLabel);
 }
 
 void RightPanel::restartDeck() {
     QString script = QDir(QCoreApplication::applicationDirPath())
-                         .absoluteFilePath("../cyberdesk.sh");
+                         .absoluteFilePath("../../cyberdesk.sh");
     QProcess::startDetached("/bin/sh", {"-c", script + " restart"});
 }
 

@@ -1,13 +1,16 @@
 /* =========================================================
- * main_panel.cpp — left+center panel for sworddeck
+ * main_panel.cpp
  *
- * Tab bar below the clock:
- *   [📊 Graph]  [🌐 Browser]  [>_ Terminal]  [📁 Files]
+ * MainPanel uses a QStackedWidget with 4 slots:
+ *   0 – Graph     (GraphWidget: clock + graph PNG + status bar)
+ *   1 – Browser   (EmbedSlot: SwordFish / firefox …)
+ *   2 – FM        (EmbedSlot: swordfm / nautilus …)
+ *   3 – Terminal  (EmbedSlot: ghostty / alacritty …)
  *
- * Graph tab  — animated graph PNG + clock (original behaviour)
- * Browser    — launch SwordFish browser; show status / PID
- * Terminal   — launch ghostty; show status / PID
- * Files      — launch swordfm / nautilus; show status / PID
+ * EmbedSlot launches the app with QProcess, then polls for its
+ * X11 window ID (via _NET_CLIENT_LIST on the root window),
+ * reparents it into a QWindow container.  A "⛶ Pop Out" button
+ * moves the window back to WM control without killing the process.
  * ========================================================= */
 #include "main_panel.h"
 
@@ -16,497 +19,504 @@
 #include <QFileInfo>
 #include <QDir>
 #include <QCoreApplication>
-#include <QProcess>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
-#include <QMouseEvent>
 #include <QFileSystemWatcher>
 #include <QDateTime>
 #include <QFontMetrics>
 #include <QStandardPaths>
+#include <QWindow>
+#include <QScreen>
+#include <QApplication>
+#include <QFrame>
 #include <sys/utsname.h>
 #include <cmath>
+
+/* Xlib for window discovery + reparent */
+#include <X11/Xlib.h>
+#include <X11/Xatom.h>
+#undef Bool
+#undef None
+#undef Status
 
 static const QColor CYAN (97,  175, 239);
 static const QColor GREEN(152, 195, 121);
 static const QColor DIM  (62,  68,  81 );
 static const QColor WHITE(171, 178, 191);
-static const QColor BG   (40,  44,  52 );
-static const QColor AMBER(229, 192, 123);
-static const QColor RED  (224, 108, 117);
+static const int    CLOCK_H = 80;
 
-static const int TAB_H    = 28;   /* tab bar height in px      */
-static const int CLOCK_H  = 96;   /* clock + date + divider    */
+static QString cfgDir() { return QDir::homePath() + "/.config/animated-wallpaper"; }
 
-static QString configDir() { return QDir::homePath() + "/.config/animated-wallpaper"; }
-
-/* ── helpers ─────────────────────────────────────────────── */
-static QString findExe(std::initializer_list<const char*> names) {
-    for (const char *n : names) {
-        QString p = QStandardPaths::findExecutable(QString::fromUtf8(n));
+static QString findExeList(const QStringList &names) {
+    for (const QString &n : names) {
+        QString p = QStandardPaths::findExecutable(n);
         if (!p.isEmpty()) return p;
     }
     return {};
 }
 
-/* ── constructor ─────────────────────────────────────────── */
-MainPanel::MainPanel(QWidget *parent)
+/* ── button stylesheet ──────────────────────────────────── */
+static QString btnQss(const QString &accent = "#61afef") {
+    return QString(
+        "QPushButton { color:%1; background:rgba(40,44,52,200);"
+        "border:1px solid %1; border-radius:4px;"
+        "font:bold 9pt 'JetBrains Mono'; padding:4px 14px; }"
+        "QPushButton:hover { background:rgba(97,175,239,180); color:#1e2228; }"
+    ).arg(accent);
+}
+
+/* =========================================================
+ * GraphWidget
+ * ========================================================= */
+GraphWidget::GraphWidget(QWidget *parent)
     : QWidget(parent), m_pipes(this)
 {
     setAttribute(Qt::WA_TranslucentBackground);
-    setMouseTracking(true);
+
+    auto *t = new QTimer(this);
+    connect(t, &QTimer::timeout, this, QOverload<>::of(&QWidget::update));
+    t->start(1000);
+
+    auto *w = new QFileSystemWatcher({cfgDir()+"/graph.png", cfgDir()+"/graph.json"}, this);
+    connect(w, &QFileSystemWatcher::fileChanged, this, &GraphWidget::loadGraph);
     loadGraph();
 
-    auto *clockTimer = new QTimer(this);
-    connect(clockTimer, &QTimer::timeout, this, QOverload<>::of(&QWidget::update));
-    clockTimer->start(1000);
-
-    auto *watcher = new QFileSystemWatcher(
-        {configDir() + "/graph.png", configDir() + "/graph.json"}, this);
-    connect(watcher, &QFileSystemWatcher::fileChanged, this, &MainPanel::loadGraph);
-
-    /* Legacy bottom-right buttons — kept but hidden in launcher tabs */
     m_editBtn = new QPushButton("✚ EDIT GRAPH", this);
     m_editBtn->setCursor(Qt::PointingHandCursor);
-    m_editBtn->setStyleSheet(
-        "QPushButton { color: #98c379; background: rgba(62,68,81,160);"
-        "border: 1px solid #3e4451; border-radius: 3px;"
-        "font: bold 9pt 'JetBrains Mono'; padding: 3px 10px; }"
-        "QPushButton:hover { background: rgba(97,175,239,200); border-color: #61afef; }"
-    );
-    connect(m_editBtn, &QPushButton::clicked, this, &MainPanel::editGraph);
+    m_editBtn->setStyleSheet(btnQss("#98c379"));
+    connect(m_editBtn, &QPushButton::clicked, this, &GraphWidget::editGraph);
 
     m_fmBtn = new QPushButton("📁 SWORDFM", this);
     m_fmBtn->setCursor(Qt::PointingHandCursor);
-    m_fmBtn->setStyleSheet(
-        "QPushButton { color: #98c379; background: rgba(62,68,81,160);"
-        "border: 1px solid #3e4451; border-radius: 3px;"
-        "font: bold 9pt 'JetBrains Mono'; padding: 3px 10px; }"
-        "QPushButton:hover { background: rgba(97,175,239,200); border-color: #61afef; }"
-    );
-    connect(m_fmBtn, &QPushButton::clicked, this, &MainPanel::openFM);
+    m_fmBtn->setStyleSheet(btnQss("#98c379"));
+    connect(m_fmBtn, &QPushButton::clicked, this, []() {
+        QString e = findExeList({"swordfm","nautilus","thunar","pcmanfm"});
+        if (!e.isEmpty()) QProcess::startDetached(e, {});
+    });
 }
 
-/* ── slot: edit graph ────────────────────────────────────── */
-void MainPanel::editGraph() {
-    QString script = QDir(QCoreApplication::applicationDirPath())
-                         .absoluteFilePath("../graph-edit.sh");
-    QProcess::startDetached(script);
+void GraphWidget::editGraph() {
+    /* Binary lives at SwordWM/cpp-sworddeck/build/sworddeck,
+     * script lives at SwordWM/graph-edit.sh — two levels up. */
+    QProcess::startDetached(
+        QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("../../graph-edit.sh"));
 }
 
-/* ── slot: open browser ──────────────────────────────────── */
-void MainPanel::openBrowser() {
-    /* Launch SwordFish with DuckDuckGo as the start page.
-     * SwordFish lives at ~/.local/bin/SwordFish (installed location).
-     * Falls back to other browsers if SwordFish is not installed. */
-    QString exe = findExe({"SwordFish", "zen-browser", "firefox",
-                            "chromium", "google-chrome-stable"});
-    if (exe.isEmpty()) return;
-
-    /* If already running, just bring it to focus (don't spawn a second) */
-    if (m_browserProc && m_browserProc->state() == QProcess::Running)
-        return;
-
-    delete m_browserProc;
-    m_browserProc = new QProcess(this);
-    connect(m_browserProc, &QProcess::stateChanged,
-            this, [this](QProcess::ProcessState){ update(); });
-    /* Pass DuckDuckGo as the start URL */
-    m_browserProc->start(exe, {"https://duckduckgo.com"});
-}
-
-/* ── slot: open terminal ─────────────────────────────────── */
-void MainPanel::openTerminal() {
-    /* ghostty is the SwordWM default; fall back gracefully */
-    QString exe = findExe({"ghostty", "alacritty", "kitty", "xterm"});
-    if (exe.isEmpty()) return;
-    if (!m_terminalProc || m_terminalProc->state() == QProcess::NotRunning) {
-        delete m_terminalProc;
-        m_terminalProc = new QProcess(this);
-        connect(m_terminalProc, &QProcess::stateChanged,
-                this, [this](QProcess::ProcessState){ update(); });
-        m_terminalProc->start(exe, {});
-    }
-}
-
-/* ── slot: open FM ───────────────────────────────────────── */
-void MainPanel::openFM() {
-    /* swordfm is the SwordWM default; fall back gracefully */
-    QString exe = findExe({"swordfm", "nautilus", "thunar", "pcmanfm"});
-    if (exe.isEmpty()) return;
-    if (!m_fmProc || m_fmProc->state() == QProcess::NotRunning) {
-        delete m_fmProc;
-        m_fmProc = new QProcess(this);
-        connect(m_fmProc, &QProcess::stateChanged,
-                this, [this](QProcess::ProcessState){ update(); });
-        m_fmProc->start(exe, {});
-    }
-}
-
-/* ── launch for a tab ────────────────────────────────────── */
-void MainPanel::launchForTab(Tab tab) {
-    switch (tab) {
-    case Tab::Browser:  openBrowser();  break;
-    case Tab::Terminal: openTerminal(); break;
-    case Tab::FM:       openFM();       break;
-    default: break;
-    }
-}
-
-/* ── switch active tab without launching anything ────────── */
-void MainPanel::switchTab(Tab tab) {
-    if (m_activeTab != tab) {
-        m_activeTab = tab;
-        update();
-    }
-}
-
-/* ── mouse: tab clicks + Launch/Kill button ──────────────── */
-void MainPanel::mousePressEvent(QMouseEvent *e) {
-    /* Tab bar clicks — only switch the active tab, do NOT auto-launch */
-    for (int i = 0; i < static_cast<int>(Tab::Count); i++) {
-        if (m_tabRects[i].contains(e->pos())) {
-            Tab t = static_cast<Tab>(i);
-            if (t != m_activeTab) {
-                m_activeTab = t;
-                update();
-            }
-            return;
-        }
-    }
-
-    /* Launch / Kill button click (only valid when a launcher tab is active) */
-    if (!m_launchBtnRect.isNull() && m_launchBtnRect.contains(e->pos())
-        && m_launchBtnTab == m_activeTab)
-    {
-        QProcess **proc = nullptr;
-        switch (m_activeTab) {
-        case Tab::Browser:  proc = &m_browserProc;  break;
-        case Tab::Terminal: proc = &m_terminalProc; break;
-        case Tab::FM:       proc = &m_fmProc;       break;
-        default: break;
-        }
-        if (proc) {
-            bool running = *proc && (*proc)->state() == QProcess::Running;
-            if (running) {
-                (*proc)->terminate();   /* Kill */
-            } else {
-                launchForTab(m_activeTab);  /* Launch */
-            }
-            update();
-        }
-        return;
-    }
-
-    QWidget::mousePressEvent(e);
-}
-
-/* ── resize ──────────────────────────────────────────────── */
-void MainPanel::resizeEvent(QResizeEvent *e) {
+void GraphWidget::resizeEvent(QResizeEvent *e) {
     QWidget::resizeEvent(e);
-    /* Keep legacy buttons in bottom-right of graph tab */
     if (m_editBtn && m_fmBtn) {
-        m_editBtn->adjustSize();
-        m_fmBtn->adjustSize();
+        m_editBtn->adjustSize(); m_fmBtn->adjustSize();
         int gap = 8;
-        int total = m_editBtn->width() + gap + m_fmBtn->width();
-        int bx = width() - total - 16;
-        int by = height() - 56;
+        int bx  = width() - m_editBtn->width() - gap - m_fmBtn->width() - 16;
+        int by  = height() - 44;
         m_editBtn->move(bx, by);
         m_fmBtn->move(bx + m_editBtn->width() + gap, by);
-        bool showGraph = (m_activeTab == Tab::Graph);
-        m_editBtn->setVisible(showGraph);
-        m_fmBtn->setVisible(showGraph);
     }
 }
 
-/* ── load graph PNG ──────────────────────────────────────── */
-void MainPanel::loadGraph() {
-    QString png  = configDir() + "/graph.png";
-    QString json = configDir() + "/graph.json";
-
+void GraphWidget::loadGraph() {
+    QString png  = cfgDir() + "/graph.png";
+    QString json = cfgDir() + "/graph.json";
     m_graphPixmap = QFile::exists(png) ? QPixmap(png) : QPixmap();
-    if (!m_graphPixmap.isNull())
-        m_mtime = QFileInfo(png).lastModified().toSecsSinceEpoch();
-
     QFile f(json);
     if (f.open(QIODevice::ReadOnly)) {
-        auto obj = QJsonDocument::fromJson(f.readAll()).object();
-        m_nodes = obj["nodes"].toArray().size();
-        m_edges = obj["edges"].toArray().size();
+        auto o = QJsonDocument::fromJson(f.readAll()).object();
+        m_nodes = o["nodes"].toArray().size();
+        m_edges = o["edges"].toArray().size();
     }
+    update();
 }
 
-/* ── draw tab bar ────────────────────────────────────────── */
-void MainPanel::drawTabBar(QPainter &p, int w, int tabBarY, int tabH) {
-    struct TabDef { Tab id; const char *label; } tabs[] = {
-        { Tab::Graph,    "📊 Graph"    },
-        { Tab::Browser,  "🌐 Browser"  },
-        { Tab::Terminal, ">_ Terminal" },
-        { Tab::FM,       "📁 Files"    },
-    };
-    int n = static_cast<int>(Tab::Count);
-    int tabW = w / n;
+void GraphWidget::paintEvent(QPaintEvent *) {
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing);
+    int w = width(), h = height();
+    m_pipes.paint(p);
 
-    QFont tf("JetBrains Mono", 9, QFont::Bold);
-    p.setFont(tf);
-    QFontMetrics tfm(tf);
+    /* Clock */
+    QFont cf("JetBrains Mono", 34, QFont::Bold);
+    p.setFont(cf); p.setPen(CYAN);
+    QString ts = QDateTime::currentDateTime().toString("HH:mm:ss");
+    QFontMetrics cfm(cf);
+    p.drawText((w - cfm.horizontalAdvance(ts)) / 2, 52, ts);
 
-    for (int i = 0; i < n; i++) {
-        Tab t = tabs[i].id;
-        bool active = (t == m_activeTab);
-        int tx = i * tabW;
-        QRect r(tx, tabBarY, (i == n-1) ? w - tx : tabW, tabH);
-        m_tabRects[i] = r;
+    /* Date */
+    QFont df("JetBrains Mono", 11);
+    p.setFont(df); p.setPen(GREEN);
+    QString ds = QDateTime::currentDateTime().toString("ddd  dd MMM yyyy");
+    QFontMetrics dfm(df);
+    p.drawText((w - dfm.horizontalAdvance(ds)) / 2, 74, ds);
 
-        /* Tab background */
-        p.fillRect(r, active ? QColor(40,44,52,230) : QColor(26,28,36,180));
+    p.setPen(QPen(DIM, 1));
+    p.drawLine(8, CLOCK_H, w - 8, CLOCK_H);
 
-        /* Bottom indicator on active tab */
-        if (active) {
-            p.fillRect(tx, tabBarY + tabH - 2, r.width(), 2, CYAN);
-        }
-
-        /* Tab label */
-        p.setPen(active ? CYAN : DIM);
-        QString label = QString::fromUtf8(tabs[i].label);
-        int lx = tx + (r.width() - tfm.horizontalAdvance(label)) / 2;
-        p.drawText(lx, tabBarY + tfm.ascent() + (tabH - tfm.height()) / 2, label);
-    }
-}
-
-/* ── draw graph tab content ──────────────────────────────── */
-void MainPanel::drawGraphTab(QPainter &p, int w, int h, int contentY) {
-    int graphH = h - contentY - 60;
-
+    /* Graph image */
+    const int STATUS_H = 40;
+    int graphH = h - CLOCK_H - 6 - STATUS_H;
+    int gy     = CLOCK_H + 6;
     if (!m_graphPixmap.isNull()) {
         p.setRenderHint(QPainter::SmoothPixmapTransform);
-        const QSize scaled = m_graphPixmap.size().scaled(w, graphH, Qt::KeepAspectRatio);
-        const QRect dst((w - scaled.width()) / 2,
-                        contentY + (graphH - scaled.height()) / 2,
-                        scaled.width(), scaled.height());
+        QSize sc = m_graphPixmap.size().scaled(w, graphH, Qt::KeepAspectRatio);
+        QRect dst((w - sc.width()) / 2, gy + (graphH - sc.height()) / 2,
+                  sc.width(), sc.height());
         p.drawPixmap(dst, m_graphPixmap, m_graphPixmap.rect());
     } else {
-        p.setPen(DIM);
-        p.setFont(QFont("JetBrains Mono", 11));
-        p.drawText(QRect(0, contentY, w, graphH), Qt::AlignCenter, "[ no graph ]\n\nRun: graph-edit.sh");
+        p.setPen(DIM); p.setFont(QFont("JetBrains Mono", 11));
+        p.drawText(QRect(0, gy, w, graphH), Qt::AlignCenter,
+                   "[ no graph ]\n\nRun: graph-edit.sh");
     }
 
-    /* Bottom status bar */
-    int sy = h - 34;
-    p.setPen(QPen(DIM, 1));
-    p.drawLine(16, sy, w - 16, sy);
+    /* Status bar */
+    int sy = h - STATUS_H + 4;
+    p.setPen(QPen(DIM, 1)); p.drawLine(16, sy, w - 16, sy);
     p.setFont(QFont("JetBrains Mono", 9));
+    QFontMetrics sm(QFont("JetBrains Mono", 9));
+    int tx = 16, ty = sy + sm.ascent() + 8;
 
     QString upt = "?";
-    QFile uptimeFile("/proc/uptime");
-    if (uptimeFile.open(QIODevice::ReadOnly)) {
-        double secs = uptimeFile.readAll().split(' ')[0].toDouble();
-        upt = QString("%1h %2m").arg(int(secs/3600)).arg(int(fmod(secs,3600)/60));
+    QFile uf("/proc/uptime");
+    if (uf.open(QIODevice::ReadOnly)) {
+        double s = uf.readAll().split(' ')[0].toDouble();
+        upt = QString("%1h %2m").arg(int(s/3600)).arg(int(fmod(s,3600)/60));
     }
     QString kern = "?";
     struct utsname uts;
     if (uname(&uts) == 0) kern = QString(uts.release).split('-')[0];
 
-    QFontMetrics sm(QFont("JetBrains Mono", 9));
-    int tx = 16;
-    auto draw = [&](const QColor &col, const QString &s) {
-        p.setPen(col); p.drawText(tx, sy + 16, s);
+    auto draw = [&](const QColor &c, const QString &s) {
+        p.setPen(c); p.drawText(tx, ty, s);
         tx += sm.horizontalAdvance(s) + 20;
     };
     draw(GREEN, QString("◈ Nodes: %1  Links: %2").arg(m_nodes).arg(m_edges));
     draw(WHITE, QString("◈ Up: %1").arg(upt));
     draw(CYAN,  QString("◈ Kernel: %1").arg(kern));
+    p.end();
 }
 
-/* ── draw launcher tab (Browser / Terminal / Files) ──────── */
-void MainPanel::drawLauncherTab(QPainter &p, int w, int h, int contentY, Tab tab) {
-    struct AppInfo {
-        QString name;
-        QString exe;
-        QString description;
-        QString launchHint;
-        QColor  accentColor;
-    };
+/* =========================================================
+ * EmbedSlot
+ * ========================================================= */
+EmbedSlot::EmbedSlot(const QString &name,
+                     std::initializer_list<const char *> exeFallbacks,
+                     QWidget *parent)
+    : QWidget(parent), m_name(name)
+{
+    for (const char *e : exeFallbacks) m_exeFallbacks << QString::fromUtf8(e);
 
-    AppInfo info;
-    QProcess *proc = nullptr;
+    setAttribute(Qt::WA_TranslucentBackground);
+    m_layout = new QVBoxLayout(this);
+    m_layout->setContentsMargins(0, 0, 0, 0);
+    m_layout->setSpacing(0);
 
-    switch (tab) {
-    case Tab::Browser:
-        info.name        = "SwordFish";
-        info.exe         = findExe({"SwordFish", "zen-browser", "firefox",
-                                    "chromium", "google-chrome-stable"});
-        info.description = "Opens SwordFish with DuckDuckGo";
-        info.launchHint  = "Click to launch";
-        info.accentColor = CYAN;
-        proc = m_browserProc;
-        break;
-    case Tab::Terminal:
-        info.name        = "ghostty";
-        info.exe         = findExe({"ghostty", "alacritty", "kitty", "xterm"});
-        info.description = "SwordWM default terminal";
-        info.launchHint  = "Click to launch  |  Mod+Return";
-        info.accentColor = GREEN;
-        proc = m_terminalProc;
-        break;
-    case Tab::FM:
-        info.name        = "swordfm";
-        info.exe         = findExe({"swordfm", "nautilus", "thunar", "pcmanfm"});
-        info.description = "SwordWM default file manager";
-        info.launchHint  = "Click to launch";
-        info.accentColor = AMBER;
-        proc = m_fmProc;
-        break;
-    default: return;
+    m_embedTimer = new QTimer(this);
+    m_embedTimer->setInterval(200);
+    connect(m_embedTimer, &QTimer::timeout, this, &EmbedSlot::tryEmbed);
+
+    rebuildPlaceholder();
+}
+
+EmbedSlot::~EmbedSlot() {
+    if (m_proc && m_proc->state() == QProcess::Running)
+        m_proc->terminate();
+}
+
+QString EmbedSlot::findExe() const {
+    return findExeList(m_exeFallbacks);
+}
+
+bool EmbedSlot::isRunning() const {
+    return m_proc && m_proc->state() == QProcess::Running;
+}
+
+void EmbedSlot::rebuildPlaceholder() {
+    /* Remove old placeholder */
+    if (m_placeholder) { m_placeholder->deleteLater(); m_placeholder = nullptr; }
+
+    m_placeholder = new QWidget(this);
+    m_placeholder->setAttribute(Qt::WA_TranslucentBackground);
+    auto *vl = new QVBoxLayout(m_placeholder);
+    vl->setAlignment(Qt::AlignCenter);
+    vl->setSpacing(12);
+
+    /* App name label */
+    auto *lbl = new QLabel(m_name, m_placeholder);
+    lbl->setAlignment(Qt::AlignCenter);
+    lbl->setStyleSheet("color:#61afef; font:bold 22pt 'JetBrains Mono'; background:transparent;");
+    vl->addWidget(lbl);
+
+    QString exe = findExe();
+
+    /* Status */
+    auto *status = new QLabel(isRunning() ? "● Running — waiting for window…"
+                              : exe.isEmpty() ? "✗ Not installed"
+                              : "○ Not running", m_placeholder);
+    status->setAlignment(Qt::AlignCenter);
+    status->setStyleSheet(
+        QString("color:%1; font:10pt 'JetBrains Mono'; background:transparent;")
+        .arg(isRunning() ? "#98c379" : exe.isEmpty() ? "#e06c75" : "#e5c07b"));
+    vl->addWidget(status);
+
+    /* Launch button */
+    if (!exe.isEmpty() && !isRunning()) {
+        m_launchBtn = new QPushButton("  Launch", m_placeholder);
+        m_launchBtn->setCursor(Qt::PointingHandCursor);
+        m_launchBtn->setFixedSize(140, 34);
+        m_launchBtn->setStyleSheet(btnQss("#61afef"));
+        connect(m_launchBtn, &QPushButton::clicked, this, &EmbedSlot::launch);
+        vl->addWidget(m_launchBtn, 0, Qt::AlignCenter);
     }
 
-    bool running = proc && proc->state() == QProcess::Running;
-    bool found   = !info.exe.isEmpty();
+    m_layout->addWidget(m_placeholder);
+}
 
-    int cx = w / 2;
-    int y  = contentY + 30;
+void EmbedSlot::launch() {
+    if (isRunning()) return;
 
-    /* App name */
-    QFont titleFont("JetBrains Mono", 18, QFont::Bold);
-    p.setFont(titleFont);
-    p.setPen(info.accentColor);
-    QFontMetrics tfm(titleFont);
-    p.drawText(cx - tfm.horizontalAdvance(info.name)/2, y + tfm.ascent(), info.name);
-    y += tfm.height() + 10;
+    QString exe = findExe();
+    if (exe.isEmpty()) return;
 
-    /* Divider */
-    p.setPen(QPen(DIM, 1));
-    p.drawLine(w/4, y, 3*w/4, y);
-    y += 16;
+    delete m_proc;
+    m_proc = new QProcess(this);
+    connect(m_proc, &QProcess::stateChanged, this, [this](QProcess::ProcessState st) {
+        if (st == QProcess::NotRunning) {
+            /* Process died — remove container, show placeholder */
+            if (m_container) {
+                m_layout->removeWidget(m_container);
+                m_container->deleteLater();
+                m_container = nullptr;
+                m_embeddedWid = 0;
+            }
+            rebuildPlaceholder();
+            emit stateChanged();
+        }
+    });
 
-    /* Description */
-    QFont descFont("JetBrains Mono", 10);
-    p.setFont(descFont);
-    p.setPen(WHITE);
-    QFontMetrics dfm(descFont);
-    for (const QString &line : info.description.split('\n')) {
-        p.drawText(cx - dfm.horizontalAdvance(line)/2, y + dfm.ascent(), line);
-        y += dfm.height() + 4;
+    m_proc->start(exe, {});
+    m_embedTries = 0;
+    m_embedTimer->start();
+
+    /* Update placeholder to "waiting…" state */
+    rebuildPlaceholder();
+    emit stateChanged();
+}
+
+/* ── Poll for the app's X11 window ─────────────────────── */
+void EmbedSlot::tryEmbed() {
+    if (!m_proc || m_proc->state() != QProcess::Running) {
+        m_embedTimer->stop();
+        return;
     }
-    y += 20;
 
-    /* Status pill */
-    QString status = running ? "● RUNNING" : (found ? "○ NOT RUNNING" : "✗ NOT INSTALLED");
-    QColor  statusColor = running ? GREEN : (found ? AMBER : RED);
-    p.setFont(QFont("JetBrains Mono", 10, QFont::Bold));
-    p.setPen(statusColor);
-    QFontMetrics sfm(QFont("JetBrains Mono", 10, QFont::Bold));
-    p.drawText(cx - sfm.horizontalAdvance(status)/2, y + sfm.ascent(), status);
-    y += sfm.height() + 6;
+    qint64 pid = m_proc->processId();
 
-    /* PID if running */
-    if (running) {
-        QString pid = QString("PID: %1").arg(proc->processId());
-        p.setFont(QFont("JetBrains Mono", 9));
-        p.setPen(DIM);
-        QFontMetrics pfm(QFont("JetBrains Mono", 9));
-        p.drawText(cx - pfm.horizontalAdvance(pid)/2, y + pfm.ascent(), pid);
-        y += pfm.height() + 4;
+    Display *dpy = XOpenDisplay(nullptr);
+    if (!dpy) return;
+
+    Window root = DefaultRootWindow(dpy);
+    Atom listAtom = XInternAtom(dpy, "_NET_CLIENT_LIST", False);
+    Atom actual; int fmt; unsigned long n, after;
+    unsigned char *data = nullptr;
+
+    WId found = 0;
+    if (XGetWindowProperty(dpy, root, listAtom, 0, 1024, False, XA_WINDOW,
+                           &actual, &fmt, &n, &after, &data) == Success && data) {
+        Window *wins = (Window *)data;
+        for (unsigned long i = 0; i < n && !found; ++i) {
+            /* Check _NET_WM_PID */
+            Atom pidAtom = XInternAtom(dpy, "_NET_WM_PID", False);
+            Atom a2; int f2; unsigned long n2, af2;
+            unsigned char *pd = nullptr;
+            if (XGetWindowProperty(dpy, wins[i], pidAtom, 0, 1, False, XA_CARDINAL,
+                                   &a2, &f2, &n2, &af2, &pd) == Success && pd) {
+                unsigned long wpid = *(unsigned long *)pd;
+                XFree(pd);
+                if ((qint64)wpid == pid) { found = (WId)wins[i]; }
+            }
+        }
+        XFree(data);
     }
-    y += 24;
+    XCloseDisplay(dpy);
 
-    /* Launch / Kill button */
+    ++m_embedTries;
     if (found) {
-        QString btnLabel = running ? "  Kill" : "  Launch";
-        QColor btnBg  = running ? QColor(60,20,20,200) : QColor(20,40,60,200);
-        QColor btnBdr = running ? RED : info.accentColor;
-
-        int btnW = 140, btnH = 32;
-        int bx = cx - btnW/2;
-        QRect btnRect(bx, y, btnW, btnH);
-
-        /* Store for mousePressEvent hit-testing */
-        m_launchBtnRect = btnRect;
-        m_launchBtnTab  = tab;
-
-        p.setPen(QPen(btnBdr, 1));
-        p.setBrush(btnBg);
-        p.drawRoundedRect(btnRect, 4, 4);
-
-        p.setFont(QFont("JetBrains Mono", 10, QFont::Bold));
-        p.setPen(running ? RED : info.accentColor);
-        QFontMetrics bfm(QFont("JetBrains Mono", 10, QFont::Bold));
-        p.drawText(cx - bfm.horizontalAdvance(btnLabel)/2,
-                   y + (btnH + bfm.ascent() - bfm.descent())/2, btnLabel);
-        y += btnH + 16;
-    } else {
-        /* No button — clear the cached rect so stale clicks are ignored */
-        m_launchBtnRect = QRect();
-    }
-
-    /* Hint */
-    p.setFont(QFont("JetBrains Mono", 8));
-    p.setPen(DIM);
-    QFontMetrics hfm(QFont("JetBrains Mono", 8));
-    p.drawText(cx - hfm.horizontalAdvance(info.launchHint)/2,
-               y + hfm.ascent(), info.launchHint);
-
-    /* Exe path at bottom */
-    if (found) {
-        int by = h - 20;
-        QString exeStr = "exe: " + info.exe;
-        p.setFont(QFont("JetBrains Mono", 7));
-        p.setPen(QColor(62,68,81,160));
-        QFontMetrics efm(QFont("JetBrains Mono", 7));
-        p.drawText(cx - efm.horizontalAdvance(exeStr)/2, by, exeStr);
+        m_embedTimer->stop();
+        doEmbed(found);
+    } else if (m_embedTries > 50) {
+        /* 10 seconds — give up polling, just leave placeholder */
+        m_embedTimer->stop();
     }
 }
 
-/* ── paint ───────────────────────────────────────────────── */
-void MainPanel::paintEvent(QPaintEvent *) {
-    QPainter p(this);
-    p.setRenderHint(QPainter::Antialiasing);
-    int w = width(), h = height();
+void EmbedSlot::doEmbed(WId wid) {
+    m_embeddedWid = wid;
 
-    m_pipes.paint(p);
+    /* Remove placeholder */
+    if (m_placeholder) {
+        m_layout->removeWidget(m_placeholder);
+        m_placeholder->hide();
+        m_placeholder->deleteLater();
+        m_placeholder = nullptr;
+    }
 
-    /* ── Clock strip (always visible) ──────────────────── */
-    QDateTime now = QDateTime::currentDateTime();
-    QFont clockFont("JetBrains Mono", 34, QFont::Bold);
-    p.setFont(clockFont);
-    p.setPen(CYAN);
-    QString ts = now.toString("HH:mm:ss");
-    QFontMetrics cfm(clockFont);
-    p.drawText((w - cfm.horizontalAdvance(ts)) / 2, 52, ts);
+    /* Wrap foreign window */
+    QWindow *foreign = QWindow::fromWinId(wid);
+    foreign->setFlags(Qt::FramelessWindowHint);
+    m_container = QWidget::createWindowContainer(foreign, this);
+    m_container->setMinimumSize(100, 100);
+    m_container->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    m_container->setFocusPolicy(Qt::StrongFocus);
 
-    QFont dateFont("JetBrains Mono", 11);
-    p.setFont(dateFont);
-    p.setPen(GREEN);
-    QString ds = now.toString("ddd  dd MMM yyyy");
-    QFontMetrics dfm(dateFont);
-    p.drawText((w - dfm.horizontalAdvance(ds)) / 2, 74, ds);
+    /* Top bar: app name + pop-out button */
+    auto *bar    = new QWidget(this);
+    bar->setFixedHeight(30);
+    bar->setStyleSheet("background:rgba(30,34,40,220);");
+    auto *hl     = new QHBoxLayout(bar);
+    hl->setContentsMargins(8, 0, 8, 0);
+    hl->setSpacing(8);
 
-    /* ── Tab bar ────────────────────────────────────────── */
-    int tabBarY = 82;
-    p.setPen(QPen(DIM, 1));
-    p.drawLine(8, tabBarY - 2, w - 8, tabBarY - 2);
-    drawTabBar(p, w, tabBarY, TAB_H);
+    auto *nameLbl = new QLabel("  " + m_name, bar);
+    nameLbl->setStyleSheet("color:#61afef; font:bold 9pt 'JetBrains Mono'; background:transparent;");
+    hl->addWidget(nameLbl);
+    hl->addStretch(1);
 
-    int contentY = tabBarY + TAB_H + 4;
+    m_popOutBtn = new QPushButton("⛶  Pop Out", bar);
+    m_popOutBtn->setCursor(Qt::PointingHandCursor);
+    m_popOutBtn->setFixedHeight(22);
+    m_popOutBtn->setStyleSheet(btnQss("#e5c07b"));
+    connect(m_popOutBtn, &QPushButton::clicked, this, &EmbedSlot::popOut);
+    hl->addWidget(m_popOutBtn);
 
-    /* ── Tab content ────────────────────────────────────── */
-    switch (m_activeTab) {
-    case Tab::Graph:
-        if (m_editBtn) m_editBtn->setVisible(true);
-        if (m_fmBtn)   m_fmBtn->setVisible(true);
-        drawGraphTab(p, w, h, contentY);
-        break;
-    case Tab::Browser:
-    case Tab::Terminal:
-    case Tab::FM:
-        if (m_editBtn) m_editBtn->setVisible(false);
-        if (m_fmBtn)   m_fmBtn->setVisible(false);
-        drawLauncherTab(p, w, h, contentY, m_activeTab);
-        break;
+    auto *closeBtn = new QPushButton("✕", bar);
+    closeBtn->setCursor(Qt::PointingHandCursor);
+    closeBtn->setFixedSize(22, 22);
+    closeBtn->setStyleSheet(btnQss("#e06c75"));
+    connect(closeBtn, &QPushButton::clicked, this, [this]() {
+        if (m_proc) m_proc->terminate();
+    });
+    hl->addWidget(closeBtn);
+
+    /* Stack: bar on top, container fills rest */
+    auto *wrapper = new QWidget(this);
+    wrapper->setStyleSheet("background:transparent;");
+    auto *wl = new QVBoxLayout(wrapper);
+    wl->setContentsMargins(0, 0, 0, 0);
+    wl->setSpacing(0);
+    wl->addWidget(bar);
+    wl->addWidget(m_container, 1);
+
+    m_layout->addWidget(wrapper);
+
+    /* Force the embedded window to match our size immediately.
+     * The container may not have its final geometry yet, so defer
+     * one frame — but also do a synchronous resize right now for
+     * the common case where the container already has a size. */
+    QTimer::singleShot(0, this, &EmbedSlot::forceResizeEmbedded);
+    QTimer::singleShot(200, this, &EmbedSlot::forceResizeEmbedded);
+
+    emit stateChanged();
+}
+
+void EmbedSlot::popOut() {
+    if (!m_embeddedWid) return;
+
+    /* Re-map window under root — WM will manage it again */
+    Display *dpy = XOpenDisplay(nullptr);
+    if (dpy) {
+        Window root = DefaultRootWindow(dpy);
+        XReparentWindow(dpy, (Window)m_embeddedWid, root, 100, 100);
+        XMapRaised(dpy, (Window)m_embeddedWid);
+        XFlush(dpy);
+        XCloseDisplay(dpy);
+    }
+
+    /* Remove container from our layout */
+    if (m_container) {
+        m_layout->removeWidget(m_container->parentWidget()
+                                   ? m_container->parentWidget()
+                                   : m_container);
+        m_container->deleteLater();
+        m_container = nullptr;
+    }
+    m_embeddedWid = 0;
+
+    /* Show placeholder again (app is still running) */
+    rebuildPlaceholder();
+    emit stateChanged();
+}
+
+void EmbedSlot::resizeEvent(QResizeEvent *e) {
+    QWidget::resizeEvent(e);
+    forceResizeEmbedded();
+}
+
+void EmbedSlot::forceResizeEmbedded() {
+    if (!m_embeddedWid || !m_container) return;
+    /* Force the embedded X11 window to match our container size.
+     * Without this, the window stays at its initial (often smaller) size
+     * because QWindow::fromWinId doesn't always propagate Qt resize events
+     * to foreign X11 windows.  The Python version does the same via xdotool. */
+    Display *dpy = XOpenDisplay(nullptr);
+    if (!dpy) return;
+    int w = qMax(1, m_container->width());
+    int h = qMax(1, m_container->height());
+    XResizeWindow(dpy, (Window)m_embeddedWid, (unsigned)w, (unsigned)h);
+    XMoveResizeWindow(dpy, (Window)m_embeddedWid, 0, 0, (unsigned)w, (unsigned)h);
+    XFlush(dpy);
+    XCloseDisplay(dpy);
+}
+
+/* =========================================================
+ * MainPanel
+ * ========================================================= */
+MainPanel::MainPanel(QWidget *parent)
+    : QWidget(parent)
+{
+    setAttribute(Qt::WA_TranslucentBackground);
+
+    auto *root = new QVBoxLayout(this);
+    root->setContentsMargins(0, 0, 0, 0);
+    root->setSpacing(0);
+
+    m_stack = new QStackedWidget(this);
+    m_stack->setAttribute(Qt::WA_TranslucentBackground);
+
+    m_graph    = new GraphWidget(m_stack);
+    m_browser  = new EmbedSlot("Browser",
+                    {"SwordFish","zen-browser","firefox",
+                     "chromium","google-chrome-stable"}, m_stack);
+    m_fm       = new EmbedSlot("Files",
+                    {"swordfm","nautilus","thunar","pcmanfm"}, m_stack);
+    m_terminal = new EmbedSlot("Terminal",
+                    {"ghostty","alacritty","kitty","xterm"}, m_stack);
+
+    m_stack->addWidget(m_graph);      /* index 0 */
+    m_stack->addWidget(m_browser);    /* index 1 */
+    m_stack->addWidget(m_fm);         /* index 2 */
+    m_stack->addWidget(m_terminal);   /* index 3 */
+    m_stack->setCurrentIndex(0);
+
+    root->addWidget(m_stack);
+}
+
+void MainPanel::showPanel(const QString &id) {
+    if      (id == "graph")    switchTo(PanelSlot::Graph);
+    else if (id == "browser")  switchTo(PanelSlot::Browser);
+    else if (id == "fm")       switchTo(PanelSlot::FM);
+    else if (id == "terminal") switchTo(PanelSlot::Terminal);
+}
+
+void MainPanel::switchTo(PanelSlot slot) {
+    m_stack->setCurrentIndex(static_cast<int>(slot));
+
+    /* Auto-launch the app if it isn't running yet */
+    switch (slot) {
+    case PanelSlot::Browser:
+        if (!m_browser->isRunning())  m_browser->launch();  break;
+    case PanelSlot::FM:
+        if (!m_fm->isRunning())       m_fm->launch();       break;
+    case PanelSlot::Terminal:
+        if (!m_terminal->isRunning()) m_terminal->launch(); break;
     default: break;
     }
-
-    p.end();
 }

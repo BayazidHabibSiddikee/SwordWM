@@ -4,6 +4,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "swordwm.h"
 #include "config_parser.h"
+#include "wobble.h"
 
 /* dispatch_event is defined in x11.c */
 void dispatch_event(XEvent *ev);
@@ -157,13 +158,24 @@ int main(int argc, char *argv[]) {
 
         if (!wm->running) break;
 
+        /* Step wobble animations if any client is still bouncing */
+        if (wobble_any_active())
+            wobble_step_all();
+
         /* Block until X has data or a signal interrupts us.
-         * pselect() atomically unblocks signals during the wait, 
-         * eliminating the race condition with g_reload. */
+         * Use 16ms timeout (~60fps) when animations are active,
+         * 1s otherwise (zero CPU cost when idle). */
         fd_set rfds;
         FD_ZERO(&rfds);
         FD_SET(xfd, &rfds);
-        struct timespec timeout = { 1, 0 }; // 1 second timeout as fallback
+        struct timespec timeout;
+        if (wobble_any_active()) {
+            timeout.tv_sec  = 0;
+            timeout.tv_nsec = 16000000L; /* 16ms = ~60fps */
+        } else {
+            timeout.tv_sec  = 1;
+            timeout.tv_nsec = 0;
+        }
         pselect(xfd + 1, &rfds, NULL, NULL, &timeout, &empty_mask);
         /* Signal or timeout — loop back and check g_reload */
     }

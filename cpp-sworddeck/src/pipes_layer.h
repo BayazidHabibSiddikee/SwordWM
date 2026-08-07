@@ -1,55 +1,44 @@
-#pragma once
+#ifndef PIPES_LAYER_H
+#define PIPES_LAYER_H
+
 #include <QObject>
-#include <QTimer>
 #include <QPainter>
+#include <QTimer>
 #include <QColor>
-#include <QMap>
-#include <random>
-
-struct GridKey {
-    int x, y;
-    bool operator<(const GridKey &o) const {
-        return (x < o.x) || (x == o.x && y < o.y);
-    }
-};
-
-struct PipeChar {
-    QChar ch;
-    QColor color;
-    int age;
-};
+#include <QHash>
+#include <QPoint>
+#include <QVector>
 
 struct Pipe {
     int col, row;
-    char dir;
+    char dir;   // 'h' or 'v'
     QColor color;
     int len;
 };
 
-class QWidget;
-
 class PipesLayer : public QObject {
     Q_OBJECT
 public:
-    explicit PipesLayer(QWidget *widget, int cell = 16, int interval = 80, int maxAlpha = 140, QObject *parent = nullptr);
+    explicit PipesLayer(QWidget *parent, int cell = 16, int interval = 80, int maxAlpha = 140);
 
     void paint(QPainter &p);
-
-signals:
-    void needsUpdate();
+    int cols() const;
+    int rows() const;
 
 private slots:
     void tick();
 
 private:
-    int cols() const;
-    int rows() const;
-
     QWidget *m_widget;
     int m_cellW, m_cellH;
     int m_maxAlpha;
-    QMap<GridKey, PipeChar> m_grid;
-    QList<Pipe> m_pipes;
-    int m_frame = 0;
-    std::mt19937 m_rng{std::random_device{}()};
+    int m_frame;
+
+    struct GridCell { QChar ch; QColor color; int age; };
+    QHash<QPoint, GridCell> m_grid;
+    QVector<Pipe> m_pipes;
+
+    static const QVector<QColor> PIPE_COLORS;
 };
+
+#endif // PIPES_LAYER_H

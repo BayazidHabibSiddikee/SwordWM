@@ -1,0 +1,33 @@
+  Can it replace i3wm — honest answer: not yet for a daily driver, but it's a real WM.
+
+  Here's what SwordWM actually has vs. what i3 has:
+
+  SwordWM has:
+
+  - Master-stack tiling + monocle + float layouts
+  - 9 workspaces with window movement
+  - EWMH/ICCCM compliance (struts, window types, fullscreen)
+  - Config file with live reload
+  - Focus-follows-mouse
+  - Gaps, title bars with Xft
+  - Autostart
+
+  Real gaps compared to i3:
+
+  ┌──────────────────────────┬───────────────────────────────────────────┬───────────────────────────────────────────┐
+  │ Feature                  │ i3                                        │ SwordWM                                   │
+  ├──────────────────────────┼───────────────────────────────────────────┼───────────────────────────────────────────┤
+  │ Multiple monitor support │ ✅ Full                                   │ ❌ Single screen only (no RandR/Xinerama) │
+  ├──────────────────────────┼───────────────────────────────────────────┼───────────────────────────────────────────┤
+  │ Layout flexibility       │ ✅ Any split direction, any depth         │ ⚠️ Master-stack only                      │
+  ├──────────────────────────┼───────────────────────────────────────────┼───────────────────────────────────────────┤
+  │ IPC socket               │ ✅ i3-msg, scripting, polybar integration │ ❌ None                                   │
+  ├──────────────────────────┼───────────────────────────────────────────┼───────────────────────────────────────────┤
+  │ Scratchpad               │ ✅                                        │ ❌                                        │
+  ├──────────────────────────┼───────────────────────────────────────────┼───────────────────────────────────────────┤
+  │ Window rules             │ ✅ for_window class/title matching        │ ❌                                        │
+  ├──────────────────────────┼───────────────────────────────────────────┼───────────────────────────────────────────┤
+  │ Bar integration          │ ✅ i3bar, i3status protocol               │ ⚠️ Only via EWMH struts                   │
+  ├──────────────────────────┼───────────────────────────────────────────┼───────────────────────────────────────────┤
+  │ Urgent window handling   │ ✅                                        │ ⚠️ Flag exists in struct, not fully wired │
+  └──────────────────────────┴───────────────────────────────────────────┴───────────────────────────────────────────┘
