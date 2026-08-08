@@ -68,6 +68,15 @@ typedef struct {
     KeyBinding binds[CONF_MAX_BINDS];
     int        n_binds;
 
+    /* Physics settings */
+    int      physics_enabled;     /* 1 = enable window physics */
+    double   physics_gravity;     /* px/s^2 downward */
+    double   physics_friction;    /* per-step velocity retention 0..1 */
+    double   physics_restitution; /* wall/window bounce 0..1 */
+    double   physics_mass_density;/* mass per px^2 */
+    double   physics_throw_mult;  /* throw speed multiplier */
+    double   physics_max_throw;   /* max throw speed px/s */
+
     /* Autostart commands */
     char autostart[CONF_MAX_AUTO][256];
     int  n_autostart;

@@ -16,7 +16,6 @@
 #include "swordwm.h"
 #include "config_parser.h"
 #include "decorate.h"
-#include "wobble.h"
 #include <X11/Xft/Xft.h>
 #include <string.h>
 
@@ -42,7 +41,7 @@ static struct {
     int      start_x, start_y;
     int      orig_fx, orig_fy;
     int      orig_fw, orig_fh;
-    /* velocity tracking for wobble_drop_bounce */
+    /* velocity tracking for physics_anim_drop_bounce */
     int      prev_x, prev_y;
     double   vel_x,  vel_y;
 } g_drag;
@@ -391,8 +390,9 @@ void decorate_motion(Client *c, XMotionEvent *e) {
 void decorate_button_release(void) {
     if (g_drag.mode != DRAG_NONE) {
         /* Trigger drop bounce with the measured release velocity */
-        if (g_drag.client && g_drag.mode == DRAG_MOVE)
-            wobble_drop_bounce(g_drag.client, g_drag.vel_x, g_drag.vel_y);
+        if (g_drag.client && g_drag.mode == DRAG_MOVE && wm->physics_world)
+            physics_anim_drop_bounce(wm->physics_world, g_drag.client,
+                                      g_drag.vel_x, g_drag.vel_y);
 
         XUngrabPointer(wm->dpy, CurrentTime);
         g_drag.mode   = DRAG_NONE;

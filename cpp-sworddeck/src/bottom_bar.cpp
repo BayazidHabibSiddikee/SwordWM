@@ -49,11 +49,15 @@ static int memPct() {
     QFile f("/proc/meminfo");
     if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) return 0;
     QMap<QString, long> info;
-    while (!f.atEnd()) {
-        QString l = f.readLine();
-        auto kv = l.split(':');
-        if (kv.size() == 2) info[kv[0].trimmed()] = kv[1].trimmed().split(' ')[0].toLong();
+    QByteArray line;
+    while (f.readLineInto(&line)) {
+        int colon = line.indexOf(':');
+        if (colon < 0) continue;
+        QString key = QString::fromLocal8Bit(line.constData(), colon).trimmed();
+        QString valStr = QString::fromLocal8Bit(line.constData() + colon + 1).trimmed().split(' ')[0];
+        info[key] = valStr.toLong();
     }
+    if (info["MemTotal"] == 0) return 0;
     return (int)(100.0 * (info["MemTotal"] - info["MemAvailable"]) / info["MemTotal"]);
 }
 
@@ -62,10 +66,13 @@ static void memDetails(double &usedGB, double &totalGB) {
     QFile f("/proc/meminfo");
     if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) return;
     QMap<QString, long> info;
-    while (!f.atEnd()) {
-        QString l = f.readLine();
-        auto kv = l.split(':');
-        if (kv.size() == 2) info[kv[0].trimmed()] = kv[1].trimmed().split(' ')[0].toLong();
+    QByteArray line;
+    while (f.readLineInto(&line)) {
+        int colon = line.indexOf(':');
+        if (colon < 0) continue;
+        QString key = QString::fromLocal8Bit(line.constData(), colon).trimmed();
+        QString valStr = QString::fromLocal8Bit(line.constData() + colon + 1).trimmed().split(' ')[0];
+        info[key] = valStr.toLong();
     }
     totalGB = info["MemTotal"]                            / 1024.0 / 1024.0;
     usedGB  = (info["MemTotal"] - info["MemAvailable"]) / 1024.0 / 1024.0;

@@ -24,7 +24,7 @@ SRCS = src/main.c \
        src/decorate/decorate.c \
        src/ewmh/ewmh.c \
        src/config/config.c \
-       src/wobble.c
+       src/physics.c
 
 # Object files go into .obj/ mirroring src/ structure
 OBJS = $(patsubst %.c,$(OBJDIR)/%.o,$(SRCS))

@@ -195,6 +195,7 @@ SwordDeck is an always-on-bottom override-redirect desktop overlay — it draws 
 │                               │  │ ── SETTINGS ──    │   │
 │                               │  │ Edit graph        │   │
 │                               │  │ Audio mixer       │   │
+│                               │  │ Brightness        │   │
 │                               │  │ Choose network…   │   │
 │                               │  │ Wifi on/off       │   │
 │                               │  │ Mute on/off       │   │
@@ -229,7 +230,7 @@ SwordDeck is an always-on-bottom override-redirect desktop overlay — it draws 
 |---|---|
 | APPS | Search box (live filter, Xlib focus grab for override-redirect) + scrollable list of all installed GUI apps; pinned apps from `~/.config/animated-wallpaper/apps.json` appear first, then every app found in the 5 standard XDG `.desktop` dirs (including Flatpak exports), sorted A-Z |
 | PANELS | Three buttons — 🌐 Browser / 📁 FM / ⬛ Term — that switch the main panel's active tab |
-| SETTINGS | Edit graph · Audio mixer (pavucontrol) · Choose network (nmcli+rofi) · Wifi on/off · Mute on/off · Reading mode toggle (redshift 5000K) · Audio Visualizer toggle (glava) · Restart deck |
+| SETTINGS | Edit graph · Audio mixer (pavucontrol) · Brightness (brightnessctl) · Choose network (nmcli+rofi) · Wifi on/off · Mute on/off · Reading mode toggle (redshift 5000K) · Audio Visualizer toggle (glava) · Restart deck |
 | COLOR THEME | 6 accent presets: Dark (default) · Dracula · Gruvbox · Nord · Solarized · Monokai — displayed as checkable buttons in pairs, each styled with its own accent colour |
 
 ### Main panel — what's in it

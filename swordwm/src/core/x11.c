@@ -171,6 +171,22 @@ int x11_connect(void) {
     /* Full EWMH property setup */
     ewmh_init();
 
+    /* Initialize physics world */
+    wm->physics_world = calloc(1, sizeof(PhysicsWorld));
+    if (wm->physics_world) {
+        physics_init(wm->physics_world);
+        /* Apply config overrides */
+        if (!cfg.physics_enabled)
+            wm->physics_world->gravity_scale = 0.0;
+        wm->physics_world->gravity = cfg.physics_gravity;
+        wm->physics_world->friction = cfg.physics_friction;
+        wm->physics_world->restitution = cfg.physics_restitution;
+        wm->physics_world->mass_density = cfg.physics_mass_density;
+        wm->physics_world->throw_speed_mult = cfg.physics_throw_mult;
+        wm->physics_world->max_throw_speed = cfg.physics_max_throw;
+        physics_reset_profiles(wm->physics_world);
+    }
+
     /* Set root window background */
     XSetWindowBackground(wm->dpy, wm->root,
         BlackPixel(wm->dpy, wm->screen));
@@ -476,6 +492,13 @@ void x11_cleanup(void) {
 
     x11_ungrab_keys();
     decorate_cleanup();
+
+    /* Free physics world */
+    if (wm->physics_world) {
+        physics_destroy(wm->physics_world);
+        free(wm->physics_world);
+        wm->physics_world = NULL;
+    }
 
     /* Delete EWMH properties we set on root */
     XDeleteProperty(wm->dpy, wm->root, wm->net_client_list);

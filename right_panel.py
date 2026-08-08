@@ -356,6 +356,7 @@ class RightPanel(QWidget):
         for b in (
             button("  Edit graph",      lambda: self._launch(os.path.join(HERE, "graph-edit.sh"))),
             button("  Audio mixer",     lambda: self._launch("pavucontrol")),
+            button("  Brightness",      lambda: self._launch("brightnessctl menu")),
             button("  Choose network…", self._choose_network),
             button("  Wifi on/off",     self._toggle_wifi),
             button("  Mute on/off",     lambda: self._launch(

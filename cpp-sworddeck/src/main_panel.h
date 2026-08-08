@@ -8,13 +8,92 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
-#include "pipes_layer.h"
-
-/* ── App slot IDs ────────────────────────────────────────── */
-enum class PanelSlot { Graph = 0, Browser, FM, Terminal };
+#include <QVector>
 
 /* =========================================================
- * GraphWidget — draws the animated graph, clock, status bar
+ * AppTab — a single browser-like tab in the tab bar
+ * ========================================================= */
+class AppTab : public QWidget {
+    Q_OBJECT
+public:
+    explicit AppTab(const QString &name, const QString &icon,
+                    int index, QWidget *parent = nullptr);
+
+    void setActive(bool active);
+    bool isActive() const { return m_active; }
+    QString appName() const { return m_name; }
+    int appIndex() const { return m_index; }
+
+signals:
+    void clicked(int index);
+    void closeRequested(int index);
+
+protected:
+    void paintEvent(QPaintEvent *) override;
+    void mousePressEvent(QMouseEvent *e) override;
+    void enterEvent(QEnterEvent *) override;
+    void leaveEvent(QEvent *) override;
+
+private:
+    QString m_name;
+    QString m_icon;
+    int     m_index;
+    bool    m_active = false;
+    bool    m_hovered = false;
+};
+
+/* =========================================================
+ * AppTabBar — horizontal row of browser-like tabs
+ * ========================================================= */
+class AppTabBar : public QWidget {
+    Q_OBJECT
+public:
+    explicit AppTabBar(QWidget *parent = nullptr);
+
+    void addTab(const QString &name, const QString &icon, int index);
+    void removeTab(int index);
+    void setActiveTab(int index);
+    int  count() const { return m_tabs.size(); }
+
+signals:
+    void tabClicked(int index);
+    void tabCloseRequested(int index);
+
+protected:
+    void paintEvent(QPaintEvent *) override;
+    void resizeEvent(QResizeEvent *) override;
+
+private:
+    void relayout();
+
+    QVector<AppTab *> m_tabs;
+    int m_activeIndex = -1;
+};
+
+/* =========================================================
+ * ClockWidget — large digital clock with date
+ * ========================================================= */
+class ClockWidget : public QWidget {
+    Q_OBJECT
+public:
+    explicit ClockWidget(QWidget *parent = nullptr);
+
+signals:
+    void closeRequested();
+
+protected:
+    void paintEvent(QPaintEvent *) override;
+    void mousePressEvent(QMouseEvent *e) override;
+
+private slots:
+    void tick();
+
+private:
+    QTimer *m_timer;
+};
+
+/* =========================================================
+ * GraphWidget — shows the graph image + status
  * ========================================================= */
 class GraphWidget : public QWidget {
     Q_OBJECT
@@ -23,30 +102,17 @@ public:
 
 protected:
     void paintEvent(QPaintEvent *) override;
-    void resizeEvent(QResizeEvent *) override;
 
 private slots:
     void loadGraph();
-    void editGraph();
 
 private:
-    PipesLayer  m_pipes;
-    QPixmap     m_graphPixmap;
-    int         m_nodes = 0, m_edges = 0;
-    QPushButton *m_editBtn = nullptr;
-    QPushButton *m_fmBtn   = nullptr;
+    QPixmap m_graphPixmap;
+    int     m_nodes = 0, m_edges = 0;
 };
 
 /* =========================================================
  * EmbedSlot — hosts one embedded X11 application.
- *
- * Life cycle:
- *   launch()   — start the process, wait for its window, embed it
- *   popOut()   — un-embed: move the window to WM control, keep process
- *   close()    — terminate process
- *
- * The embed uses QWindow::fromWinId() + createWindowContainer(),
- * which is the official Qt way to host a foreign X11 window.
  * ========================================================= */
 class EmbedSlot : public QWidget {
     Q_OBJECT
@@ -56,9 +122,11 @@ public:
                        QWidget *parent = nullptr);
     ~EmbedSlot() override;
 
-    void launch();    /* launch + embed                          */
-    void popOut();    /* detach window from embed, keep running  */
+    void launch();
+    void popOut();
+    void closeApp();
     bool isRunning() const;
+    QString appName() const { return m_name; }
 
 signals:
     void stateChanged();
@@ -67,7 +135,7 @@ protected:
     void resizeEvent(QResizeEvent *e) override;
 
 private slots:
-    void tryEmbed();  /* called by timer until window is found   */
+    void tryEmbed();
 
 private:
     void doEmbed(WId wid);
@@ -78,10 +146,10 @@ private:
     QString              m_name;
     QStringList          m_exeFallbacks;
     QProcess            *m_proc       = nullptr;
-    QWidget             *m_container  = nullptr;  /* createWindowContainer result */
-    QWidget             *m_placeholder= nullptr;  /* shown while not embedded     */
+    QWidget             *m_container  = nullptr;
+    QWidget             *m_placeholder= nullptr;
     QVBoxLayout         *m_layout     = nullptr;
-    QTimer              *m_embedTimer = nullptr;  /* polls for window after launch */
+    QTimer              *m_embedTimer = nullptr;
     WId                  m_embeddedWid = 0;
     int                  m_embedTries  = 0;
     QPushButton         *m_popOutBtn  = nullptr;
@@ -89,7 +157,16 @@ private:
 };
 
 /* =========================================================
- * MainPanel — stacked: Graph | Browser | FM | Terminal
+ * MainPanel — browser-like layout:
+ *   ┌──────────────────────────────────────┐
+ *   │          ClockWidget (time)          │
+ *   ├──────────────────────────────────────┤
+ *   │   [Graph] [Tab1] [Tab2] ...         │  ← AppTabBar
+ *   ├──────────────────────────────────────┤
+ *   │                                      │
+ *   │          Content (QStackedWidget)    │
+ *   │                                      │
+ *   └──────────────────────────────────────┘
  * ========================================================= */
 class MainPanel : public QWidget {
     Q_OBJECT
@@ -97,15 +174,29 @@ public:
     explicit MainPanel(QWidget *parent = nullptr);
 
 public slots:
-    /* Called by RightPanel PANELS buttons */
-    void showPanel(const QString &id);   /* "graph","browser","fm","terminal" */
+    void showPanel(const QString &id);
+
+private slots:
+    void onTabClicked(int index);
+    void onTabCloseRequested(int index);
 
 private:
-    void switchTo(PanelSlot slot);
+    int  findTabSlot(const QString &name) const;
+    void addPanelTab(const QString &name, const QString &icon, int stackIndex);
 
-    QStackedWidget *m_stack    = nullptr;
-    GraphWidget    *m_graph    = nullptr;
-    EmbedSlot      *m_browser  = nullptr;
-    EmbedSlot      *m_fm       = nullptr;
-    EmbedSlot      *m_terminal = nullptr;
+    ClockWidget     *m_clock   = nullptr;
+    AppTabBar       *m_tabBar  = nullptr;
+    QStackedWidget  *m_stack   = nullptr;
+
+    struct TabInfo {
+        QString name;
+        QString icon;
+        int     stackIndex;
+    };
+    QVector<TabInfo> m_tabs;
+
+    GraphWidget  *m_graph    = nullptr;
+    EmbedSlot    *m_browser  = nullptr;
+    EmbedSlot    *m_fm       = nullptr;
+    EmbedSlot    *m_terminal = nullptr;
 };

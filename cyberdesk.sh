@@ -64,6 +64,12 @@ start() {
                 -f _NET_WM_STATE 32a \
                 -set _NET_WM_STATE "_NET_WM_STATE_BELOW,_NET_WM_STATE_SKIP_TASKBAR,_NET_WM_STATE_SKIP_PAGER" \
                 2>/dev/null
+            # Make glava pass through all mouse input (no click blocking)
+            xprop -id "$WID" -f _NET_WM_BYPASS_COMPOSITOR 32a -set _NET_WM_BYPASS_COMPOSITOR 1 2>/dev/null
+            # Set empty input shape so clicks pass through
+            xdotool key --window "$WID" --clearmodifiers 2>/dev/null || true
+            # Lower it below everything
+            xdotool windowfocus --sync "$WID" 2>/dev/null || true
         fi
         GLAVA=1
     fi

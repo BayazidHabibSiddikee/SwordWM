@@ -219,14 +219,14 @@ static void memInfo(double &usedGB, double &totalGB) {
     QFile f("/proc/meminfo");
     if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) return;
     QMap<QString, long> info;
-    while (!f.atEnd()) {
-        QString l = f.readLine();
-        auto kv = l.split(':');
-        if (kv.size() == 2)
-            info[kv[0].trimmed()] = kv[1].trimmed().split(' ')[0].toLong();
+    QByteArray line;
+    while (f.readLineInto(&line)) {
+        int colon = line.indexOf(':');
+        if (colon < 0) continue;
+        QString key = QString::fromLocal8Bit(line.constData(), colon).trimmed();
+        QString valStr = QString::fromLocal8Bit(line.constData() + colon + 1).trimmed().split(' ')[0];
+        info[key] = valStr.toLong();
     }
-    /* MemAvailable is what the kernel considers truly free (incl. reclaimable
-     * cache/buffers). Used = Total - Available gives the real working-set. */
     totalGB = info["MemTotal"]                            / 1024.0 / 1024.0;
     usedGB  = (info["MemTotal"] - info["MemAvailable"]) / 1024.0 / 1024.0;
 }
@@ -504,7 +504,11 @@ void RightPanel::buildDock() {
     updateRedshiftLabel();
 
     m_glavaBtn = makeBtn("", m_dock, "#c678dd");
-    connect(m_glavaBtn, &QPushButton::clicked, [this]() { toggleGlava(); });
+    m_glava = new GlavaManager(this);
+    connect(m_glavaBtn, &QPushButton::clicked, m_glava, &GlavaManager::toggle);
+    connect(m_glava, &GlavaManager::stateChanged, this, [this](bool running) {
+        m_glavaBtn->setText(running ? "  Audio Visualizer: ON" : "  Audio Visualizer: OFF");
+    });
     m_dockLayout->addWidget(m_glavaBtn);
     updateGlavaLabel();
 
@@ -752,28 +756,13 @@ void RightPanel::toggleRedshift() {
  * Glava toggle (audio visualizer)
  * ========================================================= */
 void RightPanel::updateGlavaLabel() {
-    if (!m_glavaBtn) return;
-    QString pidFile = cfgDir() + "/glava.pid";
-    if (QFile::exists(pidFile)) {
-        QFile f(pidFile);
-        if (f.open(QIODevice::ReadOnly)) {
-            int pid = f.readAll().trimmed().toInt();
-            if (pid > 0 && kill(pid, 0) == 0) {
-                m_glavaBtn->setText("  Audio Visualizer: ON");
-                return;
-            }
-        }
-    }
-    m_glavaBtn->setText("  Audio Visualizer: OFF");
+    if (!m_glavaBtn || !m_glava) return;
+    m_glavaBtn->setText(m_glava->isRunning() ?
+        "  Audio Visualizer: ON" : "  Audio Visualizer: OFF");
 }
 
 void RightPanel::toggleGlava() {
-    /* Binary lives at SwordWM/cpp-sworddeck/build/sworddeck,
-     * script lives at SwordWM/cyberdesk.sh — two levels up. */
-    QString script = QDir(QCoreApplication::applicationDirPath())
-                         .absoluteFilePath("../../cyberdesk.sh");
-    QProcess::startDetached("/bin/sh", {"-c", script + " glava-toggle"});
-    QTimer::singleShot(500, this, &RightPanel::updateGlavaLabel);
+    if (m_glava) m_glava->toggle();
 }
 
 void RightPanel::restartDeck() {

@@ -4,7 +4,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include "swordwm.h"
 #include "config_parser.h"
-#include "wobble.h"
 
 /* dispatch_event is defined in x11.c */
 void dispatch_event(XEvent *ev);
@@ -158,9 +157,9 @@ int main(int argc, char *argv[]) {
 
         if (!wm->running) break;
 
-        /* Step wobble animations if any client is still bouncing */
-        if (wobble_any_active())
-            wobble_step_all();
+        /* Step physics animations if any client is still bouncing */
+        if (wm->physics_world && physics_anim_any_active(wm->physics_world))
+            physics_anim_step_all(wm->physics_world);
 
         /* Block until X has data or a signal interrupts us.
          * Use 16ms timeout (~60fps) when animations are active,
@@ -169,7 +168,7 @@ int main(int argc, char *argv[]) {
         FD_ZERO(&rfds);
         FD_SET(xfd, &rfds);
         struct timespec timeout;
-        if (wobble_any_active()) {
+        if (wm->physics_world && physics_anim_any_active(wm->physics_world)) {
             timeout.tv_sec  = 0;
             timeout.tv_nsec = 16000000L; /* 16ms = ~60fps */
         } else {

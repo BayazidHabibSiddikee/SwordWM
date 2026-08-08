@@ -3,7 +3,6 @@
  * ========================================================= */
 #include "swordwm.h"
 #include "config_parser.h"
-#include "wobble.h"
 
 /* ── Helper: parse color string to X11 pixel ────────────── */
 static unsigned long parse_color(const char *hex) {
@@ -203,8 +202,9 @@ Client *client_add(Window win, Workspace *ws) {
     ewmh_read_title(c);
     decorate_draw(c);
 
-    /* Initialise wobble physics state for this client */
-    wobble_init(c);
+    /* Initialise physics state for this client */
+    if (wm->physics_world)
+        physics_anim_init(wm->physics_world, c);
 
     return c;
 }
@@ -245,8 +245,15 @@ void client_remove(Client *c) {
         }
     }
 
-    /* Free wobble physics state */
-    wobble_destroy(c);
+    /* Clear physics animation state */
+    if (wm->physics_world) {
+        int idx = -1;
+        for (int i = 0; i < wm->num_clients; i++) {
+            if (wm->all_clients[i] == c) { idx = i; break; }
+        }
+        if (idx >= 0 && idx < PHYSICS_MAX_WINDOWS)
+            memset(&wm->physics_world->anim[idx], 0, sizeof(PhysicsAnimState));
+    }
 
     free(c);
     ewmh_update_client_list();
@@ -331,9 +338,9 @@ void manage_window(Window win) {
     arrange_workspace(wm->current_ws);
     client_focus(c);
 
-    /* Anime pop-in bounce for floating windows */
-    if (c->floating)
-        wobble_map_bounce(c);
+    /* Animate pop-in bounce for floating windows */
+    if (c->floating && wm->physics_world)
+        physics_anim_map_bounce(wm->physics_world, c);
 
     fprintf(stderr, "swordwm: managed window 0x%lx \"%s\" (ws %d, %s)\n",
             win, c->title, c->ws->id + 1,

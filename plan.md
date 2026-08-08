@@ -102,7 +102,7 @@ Three panels: Left+Center (72%) | Right (28%) | Bottom bar.
 **Scrollable dock (below stats):**
 - APPS: live-search box (Xlib focus grab for override-redirect) + scrollable list — pinned apps from `~/.config/animated-wallpaper/apps.json` first, then all installed apps from 5 XDG `.desktop` dirs (including Flatpak), sorted A-Z
 - PANELS: 🌐 Browser / 📁 FM / ⬛ Term buttons — switch main panel tab
-- SETTINGS: Edit graph, Audio mixer (pavucontrol), Choose network (nmcli+rofi), Wifi on/off, Mute on/off, Reading mode (redshift 5000K), Audio Visualizer (glava), Restart deck
+- SETTINGS: Edit graph, Audio mixer (pavucontrol), Brightness (brightnessctl), Choose network (nmcli+rofi), Wifi on/off, Mute on/off, Reading mode (redshift 5000K), Audio Visualizer (glava), Restart deck
 - COLOR THEME: 6 presets in pairs — Dark · Dracula · Gruvbox · Nord · Solarized · Monokai
 
 ### Bottom bar

@@ -26,6 +26,7 @@
 #include "config.h"
 #include "decorate.h"
 #include "ewmh.h"
+#include "physics.h"
 
 /* ── Global WM state ─────────────────────────────────────── */
 extern WMState *wm;
@@ -108,6 +109,10 @@ void action_gap_dec(const char *arg);
 /** @brief Set wm->running = 0 to exit the event loop cleanly. */
 void action_quit(const char *arg);
 /** @brief Switch to workspace id (0-based string). */
+void action_workspace_prev(const char *arg);
+
+void action_workspace_next(const char *arg);
+
 void action_switch_workspace(const char *id);
 /** @brief Move the focused client to workspace id (0-based string). */
 void action_move_to_workspace(const char *id);

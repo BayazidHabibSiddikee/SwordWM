@@ -7,6 +7,9 @@
 
 #include <X11/Xlib.h>
 
+/* Forward declarations */
+struct PhysicsWorld;
+
 /* ── Layout modes ─────────────────────────────────────────── */
 typedef enum {
     LAYOUT_TILE    = 0,   /* master/stack tiling          */
@@ -94,6 +97,9 @@ typedef struct {
     Atom        net_wm_window_type_desktop;
     Atom        net_wm_window_type_dock;
     Atom        net_wm_moveresize;
+
+    /* Physics world (forward declared, defined in physics.h) */
+    struct PhysicsWorld *physics_world;
 } WMState;
 
 #endif /* TYPES_H */

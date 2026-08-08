@@ -9,6 +9,7 @@
 #include <QVBoxLayout>
 #include <QMap>
 #include "pipes_layer.h"
+#include "glava_manager.h"
 
 class RightPanel : public QWidget {
     Q_OBJECT
@@ -70,6 +71,7 @@ private:
     /* Settings buttons whose label changes at runtime */
     QPushButton *m_redshiftBtn = nullptr;
     QPushButton *m_glavaBtn    = nullptr;
+    GlavaManager *m_glava      = nullptr;
 
     /* Color theme switcher */
     QString m_currentTheme = "Dark (default)";

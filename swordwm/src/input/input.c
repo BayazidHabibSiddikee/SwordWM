@@ -192,6 +192,31 @@ void action_quit(const char *arg) {
     wm->running = 0;
 }
 
+/* ── action_workspace_prev ────────────────────────────────── */
+void action_workspace_prev(const char *arg) {
+    (void)arg;
+    Workspace *ws = wm->current_ws;
+    if (!ws) return;
+
+    /* Find the previous workspace in the linked list (wrap around) */
+    Workspace *prev = wm->workspaces;
+    Workspace *iter = wm->workspaces;
+    while (iter && iter != ws) {
+        prev = iter;
+        iter = iter->next;
+    }
+    workspace_switch(prev->id);
+}
+
+/* ── action_workspace_next ────────────────────────────────── */
+void action_workspace_next(const char *arg) {
+    (void)arg;
+    Workspace *ws = wm->current_ws;
+    if (!ws || !ws->next) return;
+
+    workspace_switch(ws->next->id);
+}
+
 /* ── action_switch_workspace ─────────────────────────────── */
 void action_switch_workspace(const char *id) {
     if (!id) return;

@@ -49,6 +49,15 @@ static void set_defaults(void) {
     strncpy(cfg.color_unfocused_title_fg, COLOR_UNFOCUSED_TITLE_FG, CONF_COLOR_LEN-1);
     strncpy(cfg.color_urgent_border,      COLOR_URGENT_BORDER,      CONF_COLOR_LEN-1);
 
+    /* Physics defaults */
+    cfg.physics_enabled     = 1;
+    cfg.physics_gravity     = 981.0;
+    cfg.physics_friction    = 0.985;
+    cfg.physics_restitution = 0.3;
+    cfg.physics_mass_density= 0.0005;
+    cfg.physics_throw_mult  = 0.65;
+    cfg.physics_max_throw   = 1800.0;
+
     cfg.n_binds     = 0;
     cfg.n_autostart = 0;
 }
@@ -160,6 +169,8 @@ static void parse_bind(const char *keys, const char *action) {
         else if (streq(act, "move_stack_down"))   { fn = action_move_stack_down; }
         else if (streq(act, "master_grow"))       { fn = action_master_grow; }
         else if (streq(act, "master_shrink"))     { fn = action_master_shrink; }
+    else if (streq(act, "workspace_prev"))     { fn = action_workspace_prev; }
+    else if (streq(act, "workspace_next"))     { fn = action_workspace_next; }
     else if (streq(act, "workspace")) {
         fn = action_switch_workspace;
         if (act_arg) {
@@ -308,6 +319,27 @@ static void parse_line(char *line) {
         strncpy(cfg.color_unfocused_title_fg, val, CONF_COLOR_LEN-1);
     else if (streq(key, "color_urgent_border"))
         strncpy(cfg.color_urgent_border,      val, CONF_COLOR_LEN-1);
+    /* Physics settings */
+    else if (streq(key, "physics_enabled"))
+        cfg.physics_enabled = (streq(val,"true") || streq(val,"1"));
+    else if (streq(key, "physics_gravity"))
+        cfg.physics_gravity = atof(val);
+    else if (streq(key, "physics_friction")) {
+        double v = atof(val);
+        if (v >= 0.0 && v <= 1.0) cfg.physics_friction = v;
+        else fprintf(stderr, "swordwm: config: physics_friction %.3f out of range [0,1], ignored\n", v);
+    }
+    else if (streq(key, "physics_restitution")) {
+        double v = atof(val);
+        if (v >= 0.0 && v <= 1.0) cfg.physics_restitution = v;
+        else fprintf(stderr, "swordwm: config: physics_restitution %.3f out of range [0,1], ignored\n", v);
+    }
+    else if (streq(key, "physics_mass_density"))
+        cfg.physics_mass_density = atof(val);
+    else if (streq(key, "physics_throw_mult"))
+        cfg.physics_throw_mult = atof(val);
+    else if (streq(key, "physics_max_throw"))
+        cfg.physics_max_throw = atof(val);
     else
         fprintf(stderr, "swordwm: config: unknown key '%s'\n", key);
 }

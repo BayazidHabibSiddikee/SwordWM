@@ -31,9 +31,15 @@ CyberDeck::CyberDeck(int sw, int sh, QWidget *parent)
     setGeometry(0, 0, sw, sh);
     setWindowTitle("cyberdeck");
 
-    /* No lowerBelow timer — BypassWindowManagerHint already prevents the WM
-     * from raising this window. Calling lower() every second was actively
-     * burying the panel behind everything, making it invisible. */
+    /* Periodically force the cyberdeck below all windows.
+     * BypassWindowManagerHint prevents the WM from managing us,
+     * but we still need to actively lower ourselves below
+     * normal client windows that get raised. */
+    auto *lowerTimer = new QTimer(this);
+    connect(lowerTimer, &QTimer::timeout, this, [this]() {
+        if (isVisible() && isActiveWindow()) lower();
+    });
+    lowerTimer->start(5000);
 
     auto *root = new QVBoxLayout(this);
     root->setContentsMargins(0, 0, 0, 0);
@@ -104,6 +110,7 @@ void CyberDeck::keyPressEvent(QKeyEvent *e) {
 void CyberDeck::showEvent(QShowEvent *e) {
     QWidget::showEvent(e);
     QTimer::singleShot(300, this, &CyberDeck::applyX11Hints);
+    QTimer::singleShot(500, this, [this]() { lower(); });
 }
 
 void CyberDeck::applyX11Hints() {
