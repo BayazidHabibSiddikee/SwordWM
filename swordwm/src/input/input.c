@@ -155,6 +155,15 @@ void action_toggle_floating(const char *arg) {
         c->old_w = c->w; c->old_h = c->h;
     }
 
+    /* Update physics body flags for floating/tiled state change */
+    if (wm->physics_world) {
+        PhysicsBody *body = physics_find_body(wm->physics_world, c->win);
+        if (body) {
+            body->tiled = !c->floating;
+            body->fullscreen = c->fullscreen;
+        }
+    }
+
     arrange_workspace(c->ws);
 }
 
@@ -259,6 +268,7 @@ void action_move_to_workspace(const char *id) {
 void action_reload_config(const char *arg) {
     (void)arg;
     config_reload();
+    action_spawn("~/SwordWM/cyberdesk.sh restart");
 }
 
 /* ── action_move_stack_up ────────────────────────────────── */
@@ -324,4 +334,56 @@ void action_master_shrink(const char *arg) {
     if (ws->master_ratio > 10)
         ws->master_ratio -= 5;
     arrange_workspace(ws);
+}
+
+/* ── action_minimize — toggle _NET_WM_STATE_HIDDEN ───────── */
+void action_minimize(const char *arg) {
+    (void)arg;
+    Client *c = wm->focused;
+    if (!c) return;
+
+    Atom state_atom   = wm->net_wm_state;
+    Atom hidden_atom  = XInternAtom(wm->dpy, "_NET_WM_STATE_HIDDEN", False);
+    XEvent ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.type            = ClientMessage;
+    ev.xclient.window  = c->win;
+    ev.xclient.message_type = state_atom;
+    ev.xclient.format  = 32;
+    ev.xclient.data.l[0]  = 2;  /* _NET_WM_STATE_TOGGLE */
+    ev.xclient.data.l[1]  = (long)hidden_atom;
+    ev.xclient.data.l[2]  = 0;
+    ev.xclient.data.l[3]  = 0;
+    ev.xclient.data.l[4]  = 0;
+    XSendEvent(wm->dpy, DefaultRootWindow(wm->dpy), False,
+               SubstructureNotifyMask | SubstructureRedirectMask, &ev);
+    XFlush(wm->dpy);
+    fprintf(stderr, "swordwm: minimize %s\n", c->title);
+}
+
+/* ── action_vol_up / action_vol_down / action_mute ───────── */
+void action_vol_up(const char *arg) {
+    (void)arg;
+    action_spawn("pactl set-sink-volume @DEFAULT_SINK@ +5%");
+}
+
+void action_vol_down(const char *arg) {
+    (void)arg;
+    action_spawn("pactl set-sink-volume @DEFAULT_SINK@ -5%");
+}
+
+void action_mute(const char *arg) {
+    (void)arg;
+    action_spawn("pactl set-sink-mute @DEFAULT_SINK@ toggle");
+}
+
+/* ── action_bright_up / action_bright_down ────────────────── */
+void action_bright_up(const char *arg) {
+    (void)arg;
+    action_spawn("brightnessctl s +5%");
+}
+
+void action_bright_down(const char *arg) {
+    (void)arg;
+    action_spawn("brightnessctl s 5%-");
 }

@@ -117,6 +117,10 @@ void ewmh_handle_state(Client *c, long action, Atom prop1, Atom prop2) {
     APPLY(c->fullscreen, wm->net_wm_state_fullscreen)
     APPLY(c->floating,   wm->net_wm_window_type_dialog) /* not ideal but works */
 
+    /* _NET_WM_STATE_HIDDEN — toggle minimize/iconify */
+    Atom hidden_atom = XInternAtom(wm->dpy, "_NET_WM_STATE_HIDDEN", False);
+    APPLY(c->minimized, hidden_atom)
+
     #undef APPLY
 
     /* Urgent / demands attention */
@@ -127,10 +131,20 @@ void ewmh_handle_state(Client *c, long action, Atom prop1, Atom prop2) {
         else                  c->urgent = !c->urgent;
     }
 
-    /* Re-arrange if fullscreen changed */
+    /* Re-arrange if fullscreen or minimize changed */
     if (prop1 == wm->net_wm_state_fullscreen ||
-        prop2 == wm->net_wm_state_fullscreen) {
-        if (c->fullscreen) {
+        prop2 == wm->net_wm_state_fullscreen ||
+        prop1 == hidden_atom ||
+        prop2 == hidden_atom) {
+        if (c->minimized) {
+            /* Unmap the window when minimized */
+            c->ignore_unmap += 2;
+            XUnmapWindow(wm->dpy, c->win);
+            XUnmapWindow(wm->dpy, c->frame);
+            /* Unfocus if this was the focused client */
+            if (wm->focused == c)
+                client_focus(NULL);
+        } else if (c->fullscreen) {
             XMoveResizeWindow(wm->dpy, c->frame,
                               0, 0, wm->sw, wm->sh);
             XMoveResizeWindow(wm->dpy, c->win,
@@ -211,15 +225,19 @@ void ewmh_update_desktop_names(void) {
 
 /* ── ewmh_update_workarea ────────────────────────────────── */
 void ewmh_update_workarea(void) {
-    /* One entry per desktop: x, y, width, height.
-     * Use only the configured outer gap here; actual dock/panel
-     * reservations are applied later by ewmh_apply_strut. */
-    long wa[4] = {
-        cfg.gap_outer,
-        cfg.gap_outer,
-        wm->sw - cfg.gap_outer * 2,
-        wm->sh - cfg.gap_outer * 2
-    };
+    /* Re-derive from the currently tracked live workarea.
+     * The live values are kept in sync by ewmh_apply_strut whenever a
+     * dock/panel changes its strut. Falls back to gap_outer margins. */
+    int lx = wm->wa_x;
+    int ly = wm->wa_y;
+    int lw = wm->wa_w;
+    int lh = wm->wa_h;
+    if (lw <= 0 || lh <= 0) {
+        lx = cfg.gap_outer; ly = cfg.gap_outer;
+        lw = wm->sw - cfg.gap_outer * 2;
+        lh = wm->sh - cfg.gap_outer * 2;
+    }
+    long wa[4] = { (long)lx, (long)ly, (long)lw, (long)lh };
     long all[9 * 4];
     for (int i = 0; i < NUM_WORKSPACES; i++)
         for (int j = 0; j < 4; j++)
@@ -306,13 +324,22 @@ void ewmh_apply_strut(Window win) {
     long top    = s[2];
     long bottom = s[3];
 
-    /* Update workarea to exclude the reserved space */
-    long wa[4] = {
-        cfg.gap_outer + left,
-        cfg.gap_outer + top,
-        wm->sw - cfg.gap_outer * 2 - left - right,
-        wm->sh - cfg.gap_outer * 2 - top  - bottom,
-    };
+    /* Clamp to sane ranges */
+    if (left   < 0)   left   = 0;
+    if (right  < 0)   right  = 0;
+    if (top    < 0)   top    = 0;
+    if (bottom < 0)   bottom = 0;
+
+    /* Update WM's live workarea tracking */
+    wm->wa_x  = (int)(cfg.gap_outer + left);
+    wm->wa_y  = (int)(cfg.gap_outer + top);
+    int rw = (int)(wm->sw - cfg.gap_outer * 2 - left - right);
+    int rh = (int)(wm->sh - cfg.gap_outer * 2 - top  - bottom);
+    wm->wa_w = rw > 0 ? rw : wm->sw;
+    wm->wa_h = rh > 0 ? rh : wm->sh;
+
+    /* Update _NET_WORKAREA for all desktops */
+    long wa[4] = { wm->wa_x, wm->wa_y, wm->wa_w, wm->wa_h };
     long all[9 * 4];
     for (int i = 0; i < NUM_WORKSPACES; i++)
         for (int j = 0; j < 4; j++)

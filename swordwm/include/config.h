@@ -62,6 +62,30 @@
  */
 #include <X11/keysym.h>
 
+/* XF86 multimedia keys — may not be defined on all X11 installations.
+ * Values from <X11/XF86keysym.h> */
+#ifndef XF86XK_AudioRaiseVolume
+#define XF86XK_AudioRaiseVolume      0x1008FF13
+#endif
+#ifndef XF86XK_AudioLowerVolume
+#define XF86XK_AudioLowerVolume      0x1008FF11
+#endif
+#ifndef XF86XK_AudioMute
+#define XF86XK_AudioMute             0x1008FF12
+#endif
+#ifndef XF86XK_MonBrightnessUp
+#define XF86XK_MonBrightnessUp       0x1008FF02
+#endif
+#ifndef XF86XK_MonBrightnessDown
+#define XF86XK_MonBrightnessDown     0x1008FF03
+#endif
+/* Compatibility aliases used by the KEYBINDINGS macro below */
+#define XF86AudioRaiseVolume   XF86XK_AudioRaiseVolume
+#define XF86AudioLowerVolume   XF86XK_AudioLowerVolume
+#define XF86AudioMute          XF86XK_AudioMute
+#define XF86Display            XF86XK_MonBrightnessUp
+#define XF86DisplayDown        XF86XK_MonBrightnessDown
+
 /* Forward declarations for action functions — all take const char * */
 void action_spawn(const char *cmd);
 void action_close_focused(const char *arg);
@@ -79,6 +103,12 @@ void action_move_stack_up(const char *arg);
 void action_move_stack_down(const char *arg);
 void action_master_grow(const char *arg);
 void action_master_shrink(const char *arg);
+void action_minimize(const char *arg);
+void action_vol_up(const char *arg);
+void action_vol_down(const char *arg);
+void action_mute(const char *arg);
+void action_bright_up(const char *arg);
+void action_bright_down(const char *arg);
 
 #define KEYBINDINGS \
     /* launch terminal */                                                      \
@@ -125,6 +155,15 @@ void action_master_shrink(const char *arg);
     { MOD_KEY|ShiftMask,          XK_6,      action_move_to_workspace, "5"   }, \
     { MOD_KEY|ShiftMask,          XK_7,      action_move_to_workspace, "6"   }, \
     { MOD_KEY|ShiftMask,          XK_8,      action_move_to_workspace, "7"   }, \
-    { MOD_KEY|ShiftMask,          XK_9,      action_move_to_workspace, "8"   },
+    { MOD_KEY|ShiftMask,          XK_9,      action_move_to_workspace, "8"   }, \
+    /* Minimize focused window */                                              \
+    { MOD_KEY,                    XK_m,      action_minimize,           NULL }, \
+    /* Volume control */                                                       \
+    { 0,                          XF86AudioRaiseVolume, action_vol_up,   NULL }, \
+    { 0,                          XF86AudioLowerVolume, action_vol_down, NULL }, \
+    { 0,                          XF86AudioMute,         action_mute,     NULL }, \
+    /* Brightness control */                                                   \
+    { 0,                          XF86Display,            action_bright_up, NULL }, \
+    { 0,                          XF86DisplayDown,        action_bright_down, NULL }, \
 
 #endif /* CONFIG_H */

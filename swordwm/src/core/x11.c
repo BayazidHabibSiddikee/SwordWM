@@ -147,6 +147,13 @@ int x11_connect(void) {
     wm->root    = RootWindow(wm->dpy, wm->screen);
     wm->sw      = DisplayWidth(wm->dpy, wm->screen);
     wm->sh      = DisplayHeight(wm->dpy, wm->screen);
+    /* Initialise workarea to full screen (no strut) */
+    wm->wa_x  = cfg.gap_outer;
+    wm->wa_y  = cfg.gap_outer;
+    wm->wa_w  = wm->sw - cfg.gap_outer * 2;
+    wm->wa_h  = wm->sh - cfg.gap_outer * 2;
+    wm->full_sw = wm->sw;
+    wm->full_sh = wm->sh;
     wm->running = 1;
 
     fprintf(stderr, "swordwm: display %s, screen %dx%d\n",
@@ -323,22 +330,14 @@ static void handle_client_message(XEvent *e) {
     if (!c) return;
 
     if (ev->message_type == wm->net_wm_state) {
-        /* _NET_WM_STATE_FULLSCREEN toggle */
+        /* _NET_WM_STATE — handle fullscreen and hidden (minimize) */
         Atom action = (Atom)ev->data.l[0]; /* 0=remove, 1=add, 2=toggle */
-        Atom prop   = (Atom)ev->data.l[1];
-        if (prop == wm->net_wm_state_fullscreen) {
-            int want_fs = (action == 1) ||
-                          (action == 2 && !c->fullscreen);
-            c->fullscreen = want_fs;
-            if (want_fs) {
-                XMoveResizeWindow(wm->dpy, c->frame,
-                                  0, 0, wm->sw, wm->sh);
-                XMoveResizeWindow(wm->dpy, c->win,
-                                  0, 0, wm->sw, wm->sh);
-            } else {
-                arrange_workspace(c->ws);
-            }
-        }
+        Atom prop1  = (Atom)ev->data.l[1];
+        Atom prop2  = (Atom)ev->data.l[2];
+        ewmh_handle_state(c, (long)action, prop1, prop2);
+        /* Always re-arrange after any state change that isn't fullscreen-on */
+        if (!c->fullscreen && !c->minimized)
+            arrange_workspace(c->ws);
     } else if (ev->message_type == wm->net_wm_moveresize) {
         /* _NET_WM_MOVERESIZE - client requests interactive move/resize */
         int x_root = (int)ev->data.l[0];

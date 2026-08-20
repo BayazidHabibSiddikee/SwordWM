@@ -290,6 +290,7 @@ RightPanel::RightPanel(QWidget *parent)
     : QWidget(parent), m_pipes(this)
 {
     setAttribute(Qt::WA_TranslucentBackground);
+    setMouseTracking(true);
 
     connect(&m_statsTimer, &QTimer::timeout, this, &RightPanel::updateStats);
     m_statsTimer.start(2500);
@@ -838,7 +839,10 @@ QColor RightPanel::valColor(double pct) const {
 /* =========================================================
  * paintEvent
  * ========================================================= */
-void RightPanel::paintEvent(QPaintEvent *) {
+void RightPanel::mousePressEvent(QMouseEvent *e) {
+    // Allow clicks to pass through to child widgets (buttons)
+    e->accept();
+}
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
     int W = width();

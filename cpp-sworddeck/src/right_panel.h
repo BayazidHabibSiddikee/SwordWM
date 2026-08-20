@@ -20,6 +20,7 @@ protected:
     void paintEvent(QPaintEvent *e) override;
     void resizeEvent(QResizeEvent *e) override;
     bool eventFilter(QObject *obj, QEvent *e) override;
+    void mousePressEvent(QMouseEvent *e) override;
 
 private slots:
     void updateStats();

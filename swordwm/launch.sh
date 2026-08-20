@@ -49,22 +49,24 @@ xset r rate 300 30       2>/dev/null || true   # keyboard repeat
 xset s off               2>/dev/null || true   # no screen saver
 xset -dpms               2>/dev/null || true   # no power management blanking
 
-# ── Optional: compositor ──────────────────────────────────
-# Uncomment to auto-start picom if installed.
-# Only runs if the binary exists — never auto-installed.
-#
-# if command -v picom &>/dev/null; then
-#     picom --daemon --backend glx --vsync 2>/dev/null &
-# fi
-
-# ── Optional: animated wallpaper ─────────────────────────
-# Only started if the pre-built binary exists.
-# To build it:  cd $SWORDWM_DIR && make
-#
-WALLPAPER_BIN="$SWORDWM_DIR/swordwm-wallpaper"
-if [ -x "$WALLPAPER_BIN" ]; then
-    "$WALLPAPER_BIN" &
+# ── Compositor ────────────────────────────────────────────
+# Required: the deck uses WA_TranslucentBackground, which renders black
+# without a compositor. Auto-start picom if installed.
+if command -v picom &>/dev/null; then
+    picom --daemon --backend glx --vsync 2>/dev/null &
 fi
+
+# ── Animated wallpaper ────────────────────────────────────
+# DISABLED: the cyberdeck already paints the full desktop background, and a
+# separate full-screen wallpaper window stacks on top of the deck and hides
+# its main/right panels. Only the deck should own the desktop layer.
+# To re-enable the wallpaper, uncomment the lines below — but then the deck
+# will be covered unless you stack the deck above the wallpaper.
+#
+# WALLPAPER_BIN="$SWORDWM_DIR/swordwm-wallpaper"
+# if [ -x "$WALLPAPER_BIN" ]; then
+#     "$WALLPAPER_BIN" &
+# fi
 
 # ── Optional: status bar ──────────────────────────────────
 # Prefers the C++ sworddeck binary; falls back to shell script.

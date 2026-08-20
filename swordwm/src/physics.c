@@ -31,7 +31,10 @@
 #define DEFAULT_STOP_THRESH     1.0     /* px/s: below this = stopped */
 #define DEFAULT_WALL_THICK      60.0    /* wall thickness for collision */
 
-/* ── Spring wobble tuning (from fwm wobble.c) ───────────── */
+/* ── Corner-magnetism spring constants ───────────────────── */
+#define MAGNET_K_POS   0.18      /* k for position springs (corner snap) */
+#define MAGNET_D_POS   0.65      /* damping for position springs   */
+#define MAGNET_EPS     0.05      /* convergence threshold           */
 #define SPRING_K_HOME   200.0   /* spring stiffness to rest position */
 #define SPRING_C        16.0    /* damping rate (0.57 * critical) */
 #define SPRING_K_EDGE   (SPRING_K_HOME * 0.3 * 0.3 * (WOBBLE_GRID - 1) * (WOBBLE_GRID - 1))
@@ -503,13 +506,18 @@ void physics_step(PhysicsWorld *world, int screen_width, int screen_height,
                 continue;
             if (m->id == dragged_id) continue;
 
-            /* Per-body gravity scale */
-            double gscale = (world->gravity != 0.0)
-                ? world->profiles[m->workspace_id].gravity / world->gravity
-                : 0.0;
-            if (!isnan(m->rule_gravity)) gscale *= m->rule_gravity;
-
-            m->vy += g * gscale * sdt;
+            /* Apply gravity — uses config gravity by default.
+             * When restitution > 0 (bubble mode), gravity is nearly zero
+             * so windows float freely instead of sinking. */
+            double gscale_eff = (world->restitution > 0.01) ? 30.0 : g;
+            /* Apply per-body gravity scale (e.g. workspace-specific overrides) */
+            if (!isnan(m->rule_gravity)) gscale_eff *= m->rule_gravity;
+            else {
+                int d = m->workspace_id;
+                if (d < 0 || d >= 9) d = 0;
+                gscale_eff *= world->profiles[d].gravity / world->gravity;
+            }
+            m->vy += gscale_eff * sdt;
         }
 
         /* ── Integrate positions (semi-implicit Euler) ──────── */
@@ -542,6 +550,34 @@ void physics_step(PhysicsWorld *world, int screen_width, int screen_height,
                 m->vx = 0;
                 m->vy = 0;
             }
+
+            /* ── Corner magnetism ───────────────────────────
+             * Always active — never requires the body to be "stopped".
+             * Gently attracts the window toward the nearest screen-edge
+             * or corner, giving the bubble-snap feel. Runs every frame
+             * so windows smoothly drift into place even while moving. */
+            #define MAGNET_RANGE 80.0
+            {
+                double tx = m->x, ty = m->y;
+                /* Snap left or right edge */
+                if (m->x < MAGNET_RANGE)       tx = 0.0;
+                else if (m->x + m->width > screen_width - MAGNET_RANGE)
+                    tx = (double)screen_width - m->width;
+                /* Snap top or bottom edge */
+                if (m->y < MAGNET_RANGE)       ty = 0.0;
+                else if (m->y + m->height > screen_height - MAGNET_RANGE)
+                    ty = (double)screen_height - m->height;
+                /* If already at a magnet point, stay put */
+                if (fabs(tx - m->x) > MAGNET_EPS ||
+                    fabs(ty - m->y) > MAGNET_EPS) {
+                    m->vx += (tx - m->x) * MAGNET_K_POS * sdt;
+                    m->vy += (ty - m->y) * MAGNET_K_POS * sdt;
+                    m->vx *= (1.0 - MAGNET_D_POS * sdt);
+                    m->vy *= (1.0 - MAGNET_D_POS * sdt);
+                    m->flying = 1; /* keep simulation running */
+                }
+            }
+            #undef MAGNET_RANGE
         }
 
         /* ── Wall collisions (from fwm) ────────────────────── */

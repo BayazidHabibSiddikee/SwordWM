@@ -59,10 +59,11 @@ static void layout_tile(Workspace *ws) {
     if (n == 0) return;
 
     int gap  = ws->gap;
-    int ox   = cfg.gap_outer;
-    int oy   = cfg.gap_outer;
-    int ow   = clamp_dim(wm->sw - cfg.gap_outer * 2, 120);
-    int oh   = clamp_dim(wm->sh - cfg.gap_outer * 2,  60);
+    /* Use live workarea so windows spare panels/docks/bottom bar */
+    int ox   = wm->wa_x;
+    int oy   = wm->wa_y;
+    int ow   = clamp_dim(wm->wa_w - cfg.gap_outer * 2, 120);
+    int oh   = clamp_dim(wm->wa_h - cfg.gap_outer * 2,  60);
 
     if (n == 1) {
         /* Single window: fill entire work area via for_each_tiled */
@@ -131,10 +132,11 @@ static void place_monocle(Client *c, void *data) {
 
 /* ── layout_monocle: all fullscreen, focused on top ─────── */
 static void layout_monocle(Workspace *ws) {
-    int ox = cfg.gap_outer;
-    int oy = cfg.gap_outer;
-    int ow = clamp_dim(wm->sw - cfg.gap_outer * 2, 120);
-    int oh = clamp_dim(wm->sh - cfg.gap_outer * 2,  60);
+    /* Use live workarea so monocle mode spares panels too */
+    int ox = wm->wa_x;
+    int oy = wm->wa_y;
+    int ow = clamp_dim(wm->wa_w - cfg.gap_outer * 2, 120);
+    int oh = clamp_dim(wm->wa_h - cfg.gap_outer * 2,  60);
 
     MonocleArgs a = { ox, oy, ow, oh };
     for_each_tiled(ws, place_monocle, &a);

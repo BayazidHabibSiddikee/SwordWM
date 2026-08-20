@@ -169,6 +169,12 @@ static void parse_bind(const char *keys, const char *action) {
         else if (streq(act, "move_stack_down"))   { fn = action_move_stack_down; }
         else if (streq(act, "master_grow"))       { fn = action_master_grow; }
         else if (streq(act, "master_shrink"))     { fn = action_master_shrink; }
+        else if (streq(act, "minimize"))          { fn = action_minimize; }
+        else if (streq(act, "vol_up"))            { fn = action_vol_up; }
+        else if (streq(act, "vol_down"))          { fn = action_vol_down; }
+        else if (streq(act, "mute"))              { fn = action_mute; }
+        else if (streq(act, "bright_up"))         { fn = action_bright_up; }
+        else if (streq(act, "bright_down"))       { fn = action_bright_down; }
     else if (streq(act, "workspace_prev"))     { fn = action_workspace_prev; }
     else if (streq(act, "workspace_next"))     { fn = action_workspace_next; }
     else if (streq(act, "workspace")) {

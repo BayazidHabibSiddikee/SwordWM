@@ -157,6 +157,30 @@ int main(int argc, char *argv[]) {
 
         if (!wm->running) break;
 
+        /* Step physics rigid body simulation */
+        if (wm->physics_world && cfg.physics_enabled)
+            physics_step(wm->physics_world, wm->sw, wm->sh, 0, 1.0/60.0);
+
+        /* Sync physics body positions back to clients */
+        if (wm->physics_world && cfg.physics_enabled) {
+            for (int i = 0; i < wm->num_clients; i++) {
+                if (wm->all_clients[i]) {
+                    Client *c = wm->all_clients[i];
+                    PhysicsBody *body = physics_find_body(wm->physics_world, c->win);
+                    if (body && !body->tiled && !body->fullscreen && !body->pinned) {
+                        /* Update client position from physics body */
+                        int new_x = (int)body->x;
+                        int new_y = (int)body->y;
+                        if (new_x != c->x || new_y != c->y) {
+                            c->x = new_x;
+                            c->y = new_y;
+                            XMoveWindow(wm->dpy, c->frame, c->x, c->y);
+                        }
+                    }
+                }
+            }
+        }
+
         /* Step physics animations if any client is still bouncing */
         if (wm->physics_world && physics_anim_any_active(wm->physics_world))
             physics_anim_step_all(wm->physics_world);

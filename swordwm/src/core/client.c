@@ -338,9 +338,20 @@ void manage_window(Window win) {
     arrange_workspace(wm->current_ws);
     client_focus(c);
 
-    /* Animate pop-in bounce for floating windows */
-    if (c->floating && wm->physics_world)
-        physics_anim_map_bounce(wm->physics_world, c);
+    /* Sync physics body for all windows */
+    if (wm->physics_world) {
+        PhysicsBody *body = physics_sync_body(wm->physics_world, c->win, c->x, c->y, c->w, c->h, wm->sw);
+        if (body) {
+            /* Set physics flags based on client state */
+            body->tiled = !c->floating;  /* Tiled in physics = not floating in client */
+            body->floating = 0;          /* Clear special floating flag */
+            body->fullscreen = c->fullscreen;
+        }
+        /* Animate pop-in bounce for floating windows */
+        if (c->floating) {
+            physics_anim_map_bounce(wm->physics_world, c);
+        }
+    }
 
     fprintf(stderr, "swordwm: managed window 0x%lx \"%s\" (ws %d, %s)\n",
             win, c->title, c->ws->id + 1,

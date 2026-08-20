@@ -102,19 +102,12 @@ void ClockWidget::paintEvent(QPaintEvent *) {
     QFontMetrics dfm(df);
     p.drawText((w - dfm.horizontalAdvance(ds)) / 2, 74, ds);
 
-    /* Close button — top right */
-    QFont xf("JetBrains Mono", 12, QFont::Bold);
-    p.setFont(xf);
-    p.setPen(QColor(150, 155, 165));
-    p.drawText(w - 36, 0, 30, 30, Qt::AlignCenter, "✕");
-
     p.setPen(QPen(DIM, 1));
     p.drawLine(0, h - 1, w, h - 1);
 }
 
 void ClockWidget::mousePressEvent(QMouseEvent *e) {
-    if (e->position().x() > width() - 40 && e->position().y() < 32)
-        emit closeRequested();
+    (void)e;
 }
 
 /* =========================================================

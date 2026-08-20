@@ -106,10 +106,12 @@ void decorate_draw(Client *c) {
     if (!c || !c->frame) return;
 
     /* Use runtime cfg colors — they can be overridden from the config file */
-    const char *bg_hex  = c->focused ? cfg.color_focused_title_bg
-                                     : cfg.color_unfocused_title_bg;
-    const char *fg_hex  = c->focused ? cfg.color_focused_title_fg
-                                     : cfg.color_unfocused_title_fg;
+    const char *bg_hex  = c->minimized   ? "#0d0e14"   /* darkened when minimized */
+                        : c->focused    ? cfg.color_focused_title_bg
+                                        : cfg.color_unfocused_title_bg;
+    const char *fg_hex  = c->minimized   ? "#3e4451"   /* dim text when minimized */
+                        : c->focused    ? cfg.color_focused_title_fg
+                                        : cfg.color_unfocused_title_fg;
     const char *bdr_hex = c->urgent  ? cfg.color_urgent_border
                         : c->focused ? cfg.color_focused_border
                                      : cfg.color_unfocused_border;

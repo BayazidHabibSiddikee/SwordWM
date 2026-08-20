@@ -33,6 +33,7 @@ struct Client {
     int          focused;      /* 1 = has input focus            */
     int          urgent;       /* 1 = demands attention          */
     int          fullscreen;   /* 1 = fullscreen                 */
+    int          minimized;    /* 1 = iconified/minimized        */
     int          ignore_unmap; /* counter: skip N UnmapNotify    */
     char         title[256];/* window title (WM_NAME)       */
     struct Workspace *ws;   /* owning workspace             */
@@ -76,6 +77,14 @@ typedef struct {
     /* Fast client lookup - simple array for O(1) access */
     Client     *all_clients[512]; /* global client array (max 512 windows) */
     int         num_clients;       /* current client count */
+
+    /* Effective workarea — screen size minus strut from dock/panel (bottom_bar, right_panel, etc.) */
+    int         wa_x;   /* workarea left offset   */
+    int         wa_y;   /* workarea top offset    */
+    int         wa_w;   /* workarea width         */
+    int         wa_h;   /* workarea height        */
+    int         full_sw; /* original screen width (unchanged by struts) */
+    int         full_sh; /* original screen height (unchanged by struts) */
 
     /* EWMH atoms (populated in x11_connect) */
     Atom        wm_protocols;
